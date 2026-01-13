@@ -1,0 +1,52 @@
+# Generated benchmark reports
+*_REPORT.md
+BENCHMARK_REPORT.md
+COMPARISON_REPORT.md
+benchmark_*.md
+results_*.md
+
+# JSON result files
+*.json
+!requirements.json
+
+# CSV output files
+*.csv
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+
+# Rust build artifacts (if any test binaries)
+*.exe
+*.pdb
+debug/
+target/
+
+# Keep audio directory structure but ignore large audio files if added
+# audio/*.mp3
+# audio/*.wav
+# audio/*.flac

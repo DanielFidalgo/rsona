@@ -1,0 +1,64 @@
+name: Benchmark Regression
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout current code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Find latest tag
+        id: tag
+        run: |
+          TAG=$(git describe --tags --abbrev=0 || echo "")
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Build bench (current)
+        run: cargo build --release --bin rsona_bench
+
+      - name: Run bench (current)
+        run: |
+          ./target/release/rsona_bench bench/audio/edm_loop.wav > curr.json
+
+      - name: Checkout previous release
+        if: steps.tag.outputs.tag != ""
+        run: |
+          git checkout ${{ steps.tag.outputs.tag }}
+
+      - name: Build bench (base)
+        if: steps.tag.outputs.tag != ""
+        run: cargo build --release --bin rsona_bench
+
+      - name: Run bench (base)
+        if: steps.tag.outputs.tag != ""
+        run: |
+          ./target/release/rsona_bench bench/audio/edm_loop.wav > base.json
+
+      - name: Compare results
+        if: steps.tag.outputs.tag != ""
+        run: |
+          python bench/compare.py base.json curr.json
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            curr.json
+            base.json

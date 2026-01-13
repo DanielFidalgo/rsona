@@ -1,0 +1,38 @@
+name: Publish to crates.io
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify tag matches Cargo.toml version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          CARGO_VERSION=$(cargo metadata --no-deps --format-version=1 | jq -r '.packages[0].version')
+
+          echo "Tag:    $TAG_VERSION"
+          echo "Cargo:  $CARGO_VERSION"
+
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "❌ Tag version does not match Cargo.toml version"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: cargo test --all --release
+
+      - name: Publish crate
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked
