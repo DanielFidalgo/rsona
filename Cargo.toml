@@ -34,10 +34,6 @@ name = "rsona_bench"
 path = "bench/rsona_bench.rs"
 
 [[bin]]
-name = "feature_parity"
-path = "bench/feature_parity_rsona.rs"
-
-[[bin]]
 name = "loopfinder_bench"
 path = "bench/loopfinder_bench.rs"
 

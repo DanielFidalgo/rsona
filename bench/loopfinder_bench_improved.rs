@@ -10,7 +10,6 @@ use rsona::{
         best_repeat_phase, estimate_repeat_lag, self_similarity,
     },
     spectrum::{MelConfig, StftConfig, mel_spectrogram, stft},
-    structure::{SegmentationConfig, segment_intro_loop_outro_with_onsets},
     temporal::{BeatConfig, TempoConfig, estimate_tempo, track_beats},
 };
 
@@ -76,21 +75,6 @@ struct PhaseCandidate {
     seconds: f64,
     score: f32,
 }
-
-    if detailed {
-        eprintln!("\nPhase comparison:");
-        eprintln!(
-            "  Original: frame {} ({:.2}s)",
-            original_start,
-            original_start as f64 * hop_size as f64 / sample_rate as f64
-        );
-        eprintln!(
-            "  Improved: frame {} ({:.2}s), score {:.4}",
-            improved_start,
-            improved_start as f64 * hop_size as f64 / sample_rate as f64,
-            improved_score
-        );
-    }
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -379,8 +363,8 @@ fn find_best_phase_by_similarity(
     // Sort by score descending
     candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
 
-    let best_coarse = candidates[0].frame;
-    let best_score_coarse = candidates[0].score;
+    let _best_coarse = candidates[0].frame;
+    let _best_score_coarse = candidates[0].score;
 
     // Fine search around top 5 coarse candidates
     let mut fine_candidates: Vec<PhaseCandidate> = Vec::new();
