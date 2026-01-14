@@ -3,7 +3,7 @@ name: Benchmark Regression
 on:
   pull_request:
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   bench:
@@ -37,21 +37,21 @@ jobs:
           ./target/release/rsona_bench bench/audio/edm_loop.wav > curr.json
 
       - name: Checkout previous release
-        if: steps.tag.outputs.tag != ""
+        if: steps.tag.outputs.tag != ''
         run: |
           git checkout ${{ steps.tag.outputs.tag }}
 
       - name: Build bench (base)
-        if: steps.tag.outputs.tag != ""
+        if: steps.tag.outputs.tag != ''
         run: cargo build --release --bin rsona_bench
 
       - name: Run bench (base)
-        if: steps.tag.outputs.tag != ""
+        if: steps.tag.outputs.tag != ''
         run: |
           ./target/release/rsona_bench bench/audio/edm_loop.wav > base.json
 
       - name: Compare results
-        if: steps.tag.outputs.tag != ""
+        if: steps.tag.outputs.tag != ''
         run: |
           python bench/compare.py base.json curr.json
 
