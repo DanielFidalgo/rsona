@@ -54,6 +54,7 @@ fn wav_to_mfcc_pipeline_produces_expected_shape() {
         window: signal::Window::Hann,
         padding: signal::Padding::ZeroPadEnd,
         channel_mode: signal::ChannelMode::Channel(0),
+        center: true,
     };
 
     let frames = signal::frame(&audio, frame_cfg).expect("framing failed");

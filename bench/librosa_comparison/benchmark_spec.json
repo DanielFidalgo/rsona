@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "rsona-librosa Benchmark Specification",
+  "description": "Shared specification for feature-to-feature benchmarking between rsona and librosa",
+  "version": "1.0.0",
+
+  "common_parameters": {
+    "sample_rate": 22050,
+    "n_fft": 2048,
+    "hop_length": 512,
+    "window": "hann",
+    "n_mels": 128,
+    "n_mfcc": 13,
+    "fmin": 0.0,
+    "fmax": null
+  },
+
+  "execution": {
+    "warmup_runs": 2,
+    "benchmark_runs": 10,
+    "timeout_seconds": 300
+  },
+
+  "test_suites": [
+    {
+      "name": "isolated_features",
+      "description": "Test individual features in isolation",
+      "tests": [
+        {
+          "feature": "rms",
+          "librosa_available": true,
+          "rsona_available": false,
+          "status": "coming_soon",
+          "params": {
+            "frame_length": 2048,
+            "hop_length": 512
+          },
+          "correctness": {
+            "mae_threshold": 0.01,
+            "correlation_threshold": 0.95
+          }
+        },
+        {
+          "feature": "spectral_centroid",
+          "librosa_available": true,
+          "rsona_available": true,
+          "status": "ready",
+          "params": {
+            "n_fft": 2048,
+            "hop_length": 512
+          },
+          "correctness": {
+            "mae_threshold": 50.0,
+            "correlation_threshold": 0.95
+          }
+        },
+        {
+          "feature": "spectral_bandwidth",
+          "librosa_available": true,
+          "rsona_available": true,
+          "status": "ready",
+          "params": {
+            "n_fft": 2048,
+            "hop_length": 512
+          },
+          "correctness": {
+            "mae_threshold": 100.0,
+            "correlation_threshold": 0.9
+          }
+        },
+        {
+          "feature": "spectral_rolloff",
+          "librosa_available": true,
+          "rsona_available": true,
+          "status": "ready",
+          "params": {
+            "n_fft": 2048,
+            "hop_length": 512,
+            "roll_percent": 0.85
+          },
+          "correctness": {
+            "mae_threshold": 100.0,
+            "correlation_threshold": 0.9
+          }
+        },
+        {
+          "feature": "spectral_flux",
+          "librosa_available": true,
+          "rsona_available": true,
+          "status": "ready",
+          "params": {
+            "n_fft": 2048,
+            "hop_length": 512
+          },
+          "correctness": {
+            "mae_threshold": 0.1,
+            "correlation_threshold": 0.85
+          }
+        },
+        {
+          "feature": "onset_strength",
+          "librosa_available": true,
+          "rsona_available": true,
+          "status": "ready",
+          "params": {
+            "n_fft": 2048,
+            "hop_length": 512,
+            "n_mels": 128
+          },
+          "correctness": {
+            "mae_threshold": 0.1,
+            "correlation_threshold": 0.9
+          }
+        },
+        {
+          "feature": "tempo",
+          "librosa_available": true,
+          "rsona_available": true,
+          "status": "ready",
+          "params": {
+            "hop_length": 512
+          },
+          "correctness": {
+            "mae_threshold": 2.0,
+            "correlation_threshold": null
+          }
+        },
+        {
+          "feature": "chroma_stft",
+          "librosa_available": true,
+          "rsona_available": true,
+          "status": "ready",
+          "params": {
+            "n_fft": 2048,
+            "hop_length": 512,
+            "n_chroma": 12
+          },
+          "correctness": {
+            "mae_threshold": 0.1,
+            "correlation_threshold": 0.85
+          }
+        },
+        {
+          "feature": "mfcc",
+          "librosa_available": true,
+          "rsona_available": true,
+          "status": "ready",
+          "params": {
+            "n_fft": 2048,
+            "hop_length": 512,
+            "n_mels": 128,
+            "n_mfcc": 13
+          },
+          "correctness": {
+            "mae_threshold": 1.5,
+            "correlation_threshold": 0.9
+          }
+        }
+      ]
+    },
+    {
+      "name": "end_to_end_flows",
+      "description": "Test complete analysis pipelines",
+      "tests": [
+        {
+          "flow": "full_feature_extraction",
+          "description": "Load audio and extract all supported features",
+          "status": "ready",
+          "steps": [
+            "load_audio",
+            "stft",
+            "mel_spectrogram",
+            "mfcc",
+            "spectral_centroid",
+            "spectral_flux",
+            "onset_strength",
+            "tempo_estimation"
+          ],
+          "report_breakdown": true
+        },
+        {
+          "flow": "structural_segmentation",
+          "description": "Full segmentation pipeline (intro/loop/outro detection)",
+          "status": "coming_soon",
+          "steps": [
+            "load_audio",
+            "chroma_stft",
+            "self_similarity",
+            "segment_boundaries"
+          ],
+          "report_breakdown": true
+        },
+        {
+          "flow": "batch_processing",
+          "description": "Process multiple files sequentially",
+          "status": "ready",
+          "num_files": 5,
+          "report_per_file": false
+        }
+      ]
+    },
+    {
+      "name": "scaling_tests",
+      "description": "Test performance scaling with audio duration",
+      "tests": [
+        {
+          "duration_seconds": 30,
+          "description": "Short audio clip"
+        },
+        {
+          "duration_seconds": 120,
+          "description": "Medium audio file (2 minutes)"
+        },
+        {
+          "duration_seconds": 600,
+          "description": "Long audio file (10 minutes)"
+        }
+      ]
+    }
+  ],
+
+  "audio_files": {
+    "default": "bench/audio/test_sample.wav",
+    "short": "bench/audio/30s_sample.wav",
+    "medium": "bench/audio/2min_sample.wav",
+    "long": "bench/audio/10min_sample.wav",
+    "batch": [
+      "bench/audio/sample1.wav",
+      "bench/audio/sample2.wav",
+      "bench/audio/sample3.wav",
+      "bench/audio/sample4.wav",
+      "bench/audio/sample5.wav"
+    ]
+  },
+
+  "output": {
+    "formats": ["json", "csv"],
+    "artifacts_directory": "bench/librosa_comparison/artifacts",
+    "generate_charts": true,
+    "chart_types": [
+      "runtime_comparison",
+      "real_time_factor",
+      "correctness_metrics",
+      "scaling_behavior",
+      "feature_parity_matrix"
+    ]
+  },
+
+  "result_schema": {
+    "description": "Expected output format from both implementations",
+    "fields": {
+      "impl": "string (librosa|rsona)",
+      "feature": "string",
+      "runtime_ms": "float",
+      "result_summary": {
+        "mean": "float (optional)",
+        "std": "float (optional)",
+        "min": "float (optional)",
+        "max": "float (optional)",
+        "shape": "array[int] (optional)"
+      },
+      "correctness": {
+        "mae": "float (optional)",
+        "correlation": "float (optional)",
+        "structural_agreement": "float (optional)"
+      }
+    }
+  }
+}

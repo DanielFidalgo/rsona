@@ -74,7 +74,22 @@ pub fn onset_strength(spec: &Spectrogram, cfg: OnsetConfig) -> OnsetEnvelope {
     let mel = mel_spectrogram(spec, cfg.mel.clone());
 
     // 2) Compute onset from mel spectrogram
-    onset_strength_from_mel(&mel, cfg.db)
+    let mut envelope = onset_strength_from_mel(&mel, cfg.db);
+
+    // 3) Apply centering shift to match librosa's center=True behavior
+    // Shift by n_fft / (2 * hop_length) frames to align with centered STFT
+    let n_fft = spec.n_fft();
+    let hop_size = spec.hop_size();
+    let shift = n_fft / (2 * hop_size);
+
+    if shift > 0 && shift < envelope.n_frames {
+        // Prepend `shift` zeros and trim the end
+        let mut shifted_values = vec![0.0f32; shift];
+        shifted_values.extend_from_slice(&envelope.values[..envelope.n_frames - shift]);
+        envelope.values = shifted_values;
+    }
+
+    envelope
 }
 
 /// Compute onset strength envelope from a pre-computed mel spectrogram.
@@ -108,7 +123,7 @@ pub fn onset_strength_from_mel(mel: &MelSpectrogram, db_cfg: DbConfig) -> OnsetE
                     let cur = &mel_db[t * n_mels..(t + 1) * n_mels];
                     let prev = &mel_db[(t - 1) * n_mels..t * n_mels];
 
-                    *onset_val = compute_positive_diff_sum(cur, prev);
+                    *onset_val = compute_positive_diff_sum(cur, prev) / n_mels as f32;
                 });
         } else {
             // Sequential path for smaller frame counts
@@ -116,7 +131,7 @@ pub fn onset_strength_from_mel(mel: &MelSpectrogram, db_cfg: DbConfig) -> OnsetE
                 let cur = &mel_db[t * n_mels..(t + 1) * n_mels];
                 let prev = &mel_db[(t - 1) * n_mels..t * n_mels];
 
-                onset[t] = compute_positive_diff_sum(cur, prev);
+                onset[t] = compute_positive_diff_sum(cur, prev) / n_mels as f32;
             }
         }
     }

@@ -71,6 +71,15 @@ pub struct FrameConfig {
 
     /// Channel selection strategy.
     pub channel_mode: ChannelMode,
+
+    /// If true, center the frames by padding the signal at both ends.
+    ///
+    /// When enabled, pads `frame_size / 2` zeros at the start and end of the signal,
+    /// ensuring the first frame is centered at sample 0. This matches librosa's
+    /// default behavior (`center=True`).
+    ///
+    /// Default: `true` (matches librosa).
+    pub center: bool,
 }
 
 impl Default for FrameConfig {
@@ -81,6 +90,7 @@ impl Default for FrameConfig {
             window: Window::Hann,
             padding: Padding::ZeroPadEnd,
             channel_mode: ChannelMode::Channel(0),
+            center: true,
         }
     }
 }
@@ -201,21 +211,37 @@ pub fn frame(audio: &Buffer, config: FrameConfig) -> Result<Frames, SignalError>
     }
 
     // 1) Extract a single-channel signal (explicit selection or mixdown).
-    let x = extract_channel(audio, config.channel_mode)?;
+    let mut x = extract_channel(audio, config.channel_mode)?;
 
-    // 2) Determine number of frames.
+    // 2) Apply center padding if requested (librosa-compatible).
+    //    Pads frame_size/2 zeros at start and end, centering first frame at sample 0.
+    if config.center {
+        let pad = config.frame_size / 2;
+        let mut padded = vec![0.0f32; x.len() + 2 * pad];
+        padded[pad..pad + x.len()].copy_from_slice(&x);
+        x = padded;
+    }
+
+    // 3) Determine number of frames.
     let n = x.len();
+    // When center padding is enabled, use Padding::None logic for frame counting
+    // because center padding already handles edge alignment (matches librosa behavior).
+    let effective_padding = if config.center {
+        Padding::None
+    } else {
+        config.padding
+    };
     #[allow(unused_variables)]
     let (n_frames, total_len) =
-        compute_frame_count(n, config.frame_size, config.hop_size, config.padding);
+        compute_frame_count(n, config.frame_size, config.hop_size, effective_padding);
 
-    // 3) Precompute window.
+    // 4) Precompute window.
     let window = WindowSpec::new(config.window, config.frame_size);
 
-    // 4) Allocate output: contiguous storage (n_frames * frame_size).
+    // 5) Allocate output: contiguous storage (n_frames * frame_size).
     let mut data = vec![0.0f32; n_frames * config.frame_size];
 
-    // 5) Fill frames with fused copy-and-window operation.
+    // 6) Fill frames with fused copy-and-window operation.
     // Each frame starts at: i * hop_size
     // If it runs past n, pad zeros (if configured).
 
@@ -507,6 +533,7 @@ mod tests {
             window: Window::Rectangular,
             padding: Padding::None,
             channel_mode: ChannelMode::Channel(0),
+            center: true,
         };
 
         let frames = frame(&audio, cfg).unwrap();
@@ -523,6 +550,7 @@ mod tests {
             window: Window::Rectangular,
             padding: Padding::ZeroPadEnd,
             channel_mode: ChannelMode::MixDownAverage,
+            center: true,
         };
 
         // MixDownAverage per frame:
@@ -542,6 +570,7 @@ mod tests {
             window: Window::Rectangular,
             padding: Padding::ZeroPadEnd,
             channel_mode: ChannelMode::Channel(0),
+            center: true,
         };
 
         // starts 0,2 (<= n-1=2) => 2 frames

@@ -22,10 +22,10 @@ impl Default for TempoConfig {
     fn default() -> Self {
         Self {
             min_bpm: 60.0,
-            max_bpm: 200.0,
+            max_bpm: 320.0,
             smooth: Some(3),
             normalize_acf: true,
-            start_bpm: 90.0,
+            start_bpm: 120.0,
             std_bpm: 40.0,
         }
     }

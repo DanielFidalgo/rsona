@@ -15,7 +15,7 @@ impl SpectralCentroid {
     pub fn n_frames(&self) -> usize {
         self.n_frames
     }
-    
+
     /// Spectral centroid values.ß
     #[inline]
     pub fn values(&self) -> &[f32] {
@@ -25,7 +25,7 @@ impl SpectralCentroid {
 
 /// Compute spectral centroid (Hz) for each frame.
 ///
-/// Centroid = sum(f * |X(f)|^2) / sum(|X(f)|^2)
+/// Centroid = sum(f * |X(f)|) / sum(|X(f)|)
 pub fn spectral_centroid(spec: &Spectrogram) -> SpectralCentroid {
     let n_frames = spec.n_frames();
     let n_bins = spec.n_bins();
@@ -40,10 +40,10 @@ pub fn spectral_centroid(spec: &Spectrogram) -> SpectralCentroid {
 
         for b in 0..n_bins {
             let freq = spec.bin_frequency_hz(b).unwrap() as f32;
-            let power = frame[b].norm_sqr();
+            let magnitude = frame[b].norm();
 
-            num += freq * power;
-            den += power;
+            num += freq * magnitude;
+            den += magnitude;
         }
 
         values.push(if den > 0.0 { num / den } else { 0.0 });

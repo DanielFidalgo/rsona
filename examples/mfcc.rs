@@ -22,6 +22,7 @@ fn main() {
             window: signal::Window::Hann,
             padding: signal::Padding::ZeroPadEnd,
             channel_mode: signal::ChannelMode::Channel(0),
+            center: true,
         },
     )
     .expect("framing failed");

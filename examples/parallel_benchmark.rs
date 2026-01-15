@@ -53,6 +53,7 @@ fn benchmark_stft_pipeline(audio: &Buffer, description: &str) {
         window: Window::Hann,
         padding: Padding::ZeroPadEnd,
         channel_mode: ChannelMode::Channel(0),
+        center: true,
     };
 
     let stft_cfg = StftConfig::with_frame_size(2048);
@@ -126,6 +127,7 @@ fn benchmark_structure_analysis(audio: &Buffer, description: &str) {
         window: Window::Hann,
         padding: Padding::ZeroPadEnd,
         channel_mode: ChannelMode::Channel(0),
+        center: true,
     };
 
     let stft_cfg = StftConfig::with_frame_size(2048);

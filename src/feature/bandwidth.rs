@@ -41,7 +41,7 @@ pub fn spectral_bandwidth(spec: &Spectrogram) -> SpectralBandwidth {
 
         for b in 0..n_bins {
             let freq = spec.bin_frequency_hz(b).unwrap() as f32;
-            let power = frame[b].norm_sqr();
+            let power = frame[b].norm();
 
             num += freq * power;
             den += power;
@@ -53,7 +53,7 @@ pub fn spectral_bandwidth(spec: &Spectrogram) -> SpectralBandwidth {
         let mut var = 0.0f32;
         for b in 0..n_bins {
             let freq = spec.bin_frequency_hz(b).unwrap() as f32;
-            let power = frame[b].norm_sqr();
+            let power = frame[b].norm();
             let diff = freq - centroid;
             var += diff * diff * power;
         }

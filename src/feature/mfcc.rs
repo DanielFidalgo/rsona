@@ -35,6 +35,8 @@ pub struct MfccConfig {
     pub dct_norm: DctNorm,
     /// Small floor value to avoid log(0).
     pub log_floor: f32,
+    /// Maximum dB range (clips values more than this many dB below the max).
+    pub top_db: f32,
     /// If > 0, apply liftering (cepstral lifter).
     pub lifter: usize,
 }
@@ -45,6 +47,7 @@ impl Default for MfccConfig {
             n_mfcc: 20,
             dct_norm: DctNorm::Ortho,
             log_floor: 1e-10,
+            top_db: 80.0,
             lifter: 0,
         }
     }
@@ -97,64 +100,64 @@ pub fn mfcc(mel: &MelSpectrogram, cfg: MfccConfig) -> MfccResult {
     let n_mels = mel.n_mels();
     let n_mfcc = cfg.n_mfcc.min(n_mels);
 
-    // Precompute DCT-II matrix: (n_mfcc × n_mels).
-    let dct = dct2_matrix(n_mfcc, n_mels, cfg.dct_norm);
+    // Step 1: Convert mel spectrogram to log scale (dB)
+    // We need to do this in two passes to apply top_db clipping correctly
+    let mut log_mel = vec![0.0f32; n_frames * n_mels];
 
-    // Output frames × n_mfcc.
+    // First pass: compute log values
+    for t in 0..n_frames {
+        let x = mel.frame(t).expect("n_frames mismatch");
+        let log_row = &mut log_mel[t * n_mels..(t + 1) * n_mels];
+
+        for m in 0..n_mels {
+            let v = x[m].max(cfg.log_floor);
+            log_row[m] = 10.0 * v.log10();
+        }
+    }
+
+    // Apply top_db clipping: ensure no value is more than top_db below the maximum
+    if cfg.top_db > 0.0 {
+        let max_db = log_mel.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let threshold = max_db - cfg.top_db;
+
+        for val in log_mel.iter_mut() {
+            *val = val.max(threshold);
+        }
+    }
+
+    // Step 2: Apply DCT-II to get MFCCs
+    let dct = dct2_matrix(n_mfcc, n_mels, cfg.dct_norm);
     let mut out = vec![0.0f32; n_frames * n_mfcc];
 
     // Parallelize for large frame counts
     if n_frames > 10 {
-        // Parallel path - pre-allocate output and write directly to avoid cloning
         out.par_chunks_mut(n_mfcc)
             .enumerate()
             .for_each(|(t, out_row)| {
-                let x = mel.frame(t).expect("n_frames mismatch");
+                let log_row = &log_mel[t * n_mels..(t + 1) * n_mels];
 
-                MFCC_BUFFERS.with(|buffers| {
-                    let mut buffers = buffers.borrow_mut();
-                    let (logm, _) = &mut *buffers;
-
-                    // Ensure buffer is properly sized
-                    logm.resize(n_mels, 0.0);
-
-                    // log-mel vector (reusing buffer)
+                // DCT: y[k] = sum_m dct[k,m] * log_row[m]
+                for k in 0..n_mfcc {
+                    let dct_row = &dct[k * n_mels..(k + 1) * n_mels];
+                    let mut acc = 0.0f32;
                     for m in 0..n_mels {
-                        let v = x[m].max(cfg.log_floor);
-                        logm[m] = v.ln();
+                        acc += dct_row[m] * log_row[m];
                     }
-
-                    // DCT: y[k] = sum_m dct[k,m] * logm[m]
-                    for k in 0..n_mfcc {
-                        let row = &dct[k * n_mels..(k + 1) * n_mels];
-                        let mut acc = 0.0f32;
-                        for m in 0..n_mels {
-                            acc += row[m] * logm[m];
-                        }
-                        out_row[k] = acc;
-                    }
-                });
+                    out_row[k] = acc;
+                }
             });
     } else {
-        // Sequential path for small frame counts - reuse logm buffer
-        let mut logm = vec![0.0f32; n_mels]; // Reuse buffer across frames
-
+        // Sequential path
         for t in 0..n_frames {
-            let x = mel.frame(t).expect("n_frames mismatch");
-
-            // log-mel vector (reusing buffer)
-            for m in 0..n_mels {
-                let v = x[m].max(cfg.log_floor);
-                logm[m] = v.ln();
-            }
-
-            // DCT: y[k] = sum_m dct[k,m] * logm[m]
+            let log_row = &log_mel[t * n_mels..(t + 1) * n_mels];
             let out_row = &mut out[t * n_mfcc..(t + 1) * n_mfcc];
+
+            // DCT: y[k] = sum_m dct[k,m] * log_row[m]
             for k in 0..n_mfcc {
-                let row = &dct[k * n_mels..(k + 1) * n_mels];
+                let dct_row = &dct[k * n_mels..(k + 1) * n_mels];
                 let mut acc = 0.0f32;
                 for m in 0..n_mels {
-                    acc += row[m] * logm[m];
+                    acc += dct_row[m] * log_row[m];
                 }
                 out_row[k] = acc;
             }

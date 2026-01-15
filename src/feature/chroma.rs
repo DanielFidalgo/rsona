@@ -26,6 +26,11 @@ pub struct ChromaConfig {
     /// Normalization method.
     pub norm: ChromaNorm,
 
+    /// Center octave for Gaussian weighting.
+    pub ctroct: f32,
+    /// Width of Gaussian dominance region (in octaves).
+    pub octwidth: f32,
+
     /// Minimum frequency to consider (Hz).
     pub fmin: f32,
     /// Maximum frequency to consider (Hz). If None, uses Nyquist frequency.
@@ -37,9 +42,11 @@ impl Default for ChromaConfig {
         Self {
             n_chroma: N_CHROMA,
             tuning: 0.0,
-            norm: ChromaNorm::None,
+            norm: ChromaNorm::Max,
             fmin: 32.7, // C1
             fmax: None, // Nyquist
+            ctroct: 5.0,
+            octwidth: 2.0,
         }
     }
 }
@@ -141,8 +148,17 @@ pub fn chroma_stft(spec: &Spectrogram, cfg: ChromaConfig) -> Chromagram {
     let fmax = cfg.fmax.unwrap_or(nyquist).min(nyquist);
 
     // Build chroma filter bank (maps FFT bins to chroma bins)
-    let chroma_filters =
-        build_chroma_filterbank(sr, n_fft, n_bins, cfg.n_chroma, cfg.tuning, cfg.fmin, fmax);
+    let chroma_filters = build_chroma_filterbank(
+        sr,
+        n_fft,
+        n_bins,
+        cfg.n_chroma,
+        cfg.tuning,
+        cfg.fmin,
+        fmax,
+        cfg.ctroct,
+        cfg.octwidth,
+    );
 
     // Output: frames × chroma
     let mut out = vec![0.0f32; n_frames * cfg.n_chroma];
@@ -186,7 +202,12 @@ struct ChromaFilterBank {
     filters: Vec<Vec<(usize, f32)>>, // (bin_idx, weight) pairs
 }
 
-/// Build chroma filter bank using a Gaussian weighting around each pitch class.
+/// Build chroma filter bank using librosa's two-stage Gaussian approach.
+///
+/// This exactly matches librosa's implementation:
+/// 1. First Gaussian: narrow per-chroma based on semitone distance
+/// 2. Second Gaussian: broad octave weighting based on ctroct and octwidth
+/// 3. L2 normalization per chroma class
 fn build_chroma_filterbank(
     sample_rate: u32,
     n_fft: usize,
@@ -195,6 +216,8 @@ fn build_chroma_filterbank(
     tuning: f32,
     fmin: f32,
     fmax: f32,
+    ctroct: f32,
+    octwidth: f32,
 ) -> ChromaFilterBank {
     assert!(n_bins == (n_fft / 2) + 1, "n_bins must be n_fft/2 + 1");
     assert_eq!(
@@ -202,77 +225,92 @@ fn build_chroma_filterbank(
         "Currently only n_chroma=12 is supported"
     );
 
+    let c0 = 16.35159783128741; // C0 in Hz
+
     // Compute frequency for each FFT bin
     let freqs: Vec<f32> = (0..n_bins)
         .map(|b| (b as f32 * sample_rate as f32) / n_fft as f32)
         .collect();
 
-    // Initialize filters (sparse representation)
-    let mut filters: Vec<Vec<(usize, f32)>> = vec![Vec::new(); n_chroma];
+    // Build dense filters first (we'll sparsify later)
+    let mut filters_dense: Vec<Vec<f32>> = vec![vec![0.0; n_bins]; n_chroma];
 
-    // For each FFT bin, determine which chroma class(es) it contributes to
+    // Precompute bin width in semitones (for first Gaussian)
+    // binwidthbins approximates the frequency resolution
+    let binwidth_semitones = 12.0 * (2.0f32.log2() / n_fft as f32);
+
+    // For each FFT bin, compute its contribution to each chroma class
     for (bin_idx, &freq) in freqs.iter().enumerate() {
         if freq < fmin || freq > fmax || freq <= 0.0 {
             continue;
         }
 
-        // Convert frequency to pitch in semitones relative to C0 (16.35 Hz)
-        // pitch = 12 * log2(freq / C0)
-        let c0 = 16.35159783128741; // C0 in Hz
+        // Convert frequency to pitch in semitones relative to C0
         let pitch = 12.0 * (freq / c0).log2() + tuning;
 
-        // Chroma class (0..11)
-        let chroma = pitch.rem_euclid(12.0);
+        // Compute octave position for second Gaussian
+        let octave_pos = pitch / 12.0;
 
-        // Use a Gaussian window centered on the chroma class
-        // This allows smooth blending when a bin falls between classes
-        let chroma_center = chroma.round();
-        let chroma_idx = (chroma_center as usize) % n_chroma;
+        // For each chroma class
+        for chroma_idx in 0..n_chroma {
+            // Distance to nearest pitch of this chroma class (in semitones)
+            let chroma_pitch = (pitch - chroma_idx as f32).rem_euclid(12.0);
+            let mut chroma_dist = chroma_pitch;
+            if chroma_dist > 6.0 {
+                chroma_dist = 12.0 - chroma_dist;
+            }
 
-        // Distance from center (in semitones within 0..12 range)
-        let mut delta = chroma - chroma_center;
-        if delta > 6.0 {
-            delta -= 12.0;
-        } else if delta < -6.0 {
-            delta += 12.0;
+            // First Gaussian: narrow per-chroma
+            // librosa uses: exp(-0.5 * (2 * D / binwidthbins)^2)
+            // The factor of 2 makes the Gaussian narrower
+            let gaussian1 = (-0.5 * (2.0 * chroma_dist / binwidth_semitones).powi(2)).exp();
+
+            // Second Gaussian: octave weighting
+            // librosa uses: exp(-0.5 * ((octave_pos - ctroct) / octwidth)^2)
+            let octave_dist = octave_pos - ctroct;
+            let gaussian2 = (-0.5 * (octave_dist / octwidth).powi(2)).exp();
+
+            // Combined weight
+            let weight = gaussian1 * gaussian2;
+
+            filters_dense[chroma_idx][bin_idx] = weight;
         }
+    }
 
-        // Gaussian weight (sigma = 0.5 semitones for reasonable spread)
-        let sigma = 0.5f32;
-        let weight = (-0.5 * (delta / sigma).powi(2)).exp();
+    // Apply L2 normalization to each chroma filter (across all bins)
+    for chroma_idx in 0..n_chroma {
+        let l2_norm: f32 = filters_dense[chroma_idx]
+            .iter()
+            .map(|w| w * w)
+            .sum::<f32>()
+            .sqrt();
 
-        // Only add if weight is significant
-        if weight > 0.01 {
-            filters[chroma_idx].push((bin_idx, weight));
-        }
-
-        // Also consider neighboring chroma classes for smooth transitions
-        if delta.abs() > 0.1 {
-            let neighbor_idx = if delta > 0.0 {
-                (chroma_idx + 1) % n_chroma
-            } else {
-                (chroma_idx + n_chroma - 1) % n_chroma
-            };
-
-            let neighbor_delta = if delta > 0.0 {
-                delta - 1.0
-            } else {
-                delta + 1.0
-            };
-            let neighbor_weight = (-0.5 * (neighbor_delta / sigma).powi(2)).exp();
-
-            if neighbor_weight > 0.01 {
-                filters[neighbor_idx].push((bin_idx, neighbor_weight));
+        if l2_norm > 1e-10 {
+            for w in &mut filters_dense[chroma_idx] {
+                *w /= l2_norm;
             }
         }
     }
 
-    // Normalize each filter to sum to 1
-    for filter in &mut filters {
-        let sum: f32 = filter.iter().map(|(_, w)| w).sum();
-        if sum > 1e-10 {
-            for (_, w) in filter.iter_mut() {
-                *w /= sum;
+    // Apply base_c rotation (librosa's default behavior)
+    // This rotates so that C is at index 0 instead of A
+    // For n_chroma=12, this is a roll of -3 positions
+    let roll_amount = 3 * (n_chroma / 12);
+    let mut filters_rotated: Vec<Vec<f32>> = vec![vec![0.0; n_bins]; n_chroma];
+
+    for chroma_idx in 0..n_chroma {
+        let source_idx = (chroma_idx + roll_amount) % n_chroma;
+        filters_rotated[chroma_idx] = filters_dense[source_idx].clone();
+    }
+
+    // Convert to sparse representation for efficiency
+    let mut filters: Vec<Vec<(usize, f32)>> = vec![Vec::new(); n_chroma];
+
+    for chroma_idx in 0..n_chroma {
+        for (bin_idx, &weight) in filters_rotated[chroma_idx].iter().enumerate() {
+            // Only store significant weights
+            if weight > 0.001 {
+                filters[chroma_idx].push((bin_idx, weight));
             }
         }
     }

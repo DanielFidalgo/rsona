@@ -335,6 +335,7 @@ mod tests {
             window: Window::Rectangular,
             padding: Padding::None,
             channel_mode: ChannelMode::Channel(0),
+            center: true,
         };
 
         let frames = frame(&audio, cfg).unwrap();

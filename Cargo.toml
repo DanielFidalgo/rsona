@@ -45,6 +45,10 @@ path = "bench/loopfinder_bench_improved.rs"
 name = "loopfinder_bench_chroma"
 path = "bench/loopfinder_bench_chroma.rs"
 
+[[bin]]
+name = "rsona_runner"
+path = "bench/librosa_comparison/rsona_runner.rs"
+
 [profile.release]
 opt-level = 3
 lto = "fat"
@@ -53,3 +57,10 @@ strip = true
 panic = "abort"
 # For maximum performance with SIMD, build with:
 # RUSTFLAGS="-C target-cpu=native" cargo build --release
+
+[lints.clippy]
+pedantic = { level = "allow", priority = -1 }
+nursery = { level = "allow", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+large_enum_variant = "allow"
