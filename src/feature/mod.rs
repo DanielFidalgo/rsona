@@ -6,6 +6,7 @@ mod chroma;
 mod flux;
 mod mfcc;
 mod onset;
+mod rms;
 mod rolloff;
 
 pub use bandwidth::{SpectralBandwidth, spectral_bandwidth};
@@ -14,4 +15,5 @@ pub use chroma::{A4_HZ, ChromaConfig, ChromaNorm, Chromagram, N_CHROMA, chroma_s
 pub use flux::{SpectralFlux, spectral_flux};
 pub use mfcc::{DctNorm, MfccConfig, MfccResult, mfcc};
 pub use onset::{OnsetConfig, OnsetEnvelope, onset_strength, onset_strength_from_mel};
+pub use rms::{Rms, rms, rms_from_spectrogram};
 pub use rolloff::{SpectralRolloff, spectral_rolloff};

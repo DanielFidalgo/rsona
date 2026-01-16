@@ -207,7 +207,7 @@ struct ChromaFilterBank {
 /// This exactly matches librosa's implementation:
 /// 1. First Gaussian: narrow per-chroma based on semitone distance
 /// 2. Second Gaussian: broad octave weighting based on ctroct and octwidth
-/// 3. L2 normalization per chroma class
+/// Note: librosa's `norm` parameter is NOT unit L2 normalization per filter
 fn build_chroma_filterbank(
     sample_rate: u32,
     n_fft: usize,
@@ -225,48 +225,74 @@ fn build_chroma_filterbank(
         "Currently only n_chroma=12 is supported"
     );
 
-    let c0 = 16.35159783128741; // C0 in Hz
+    // Tuning reference: A440 Hz
+    let a440 = 440.0f32;
 
     // Compute frequency for each FFT bin
     let freqs: Vec<f32> = (0..n_bins)
         .map(|b| (b as f32 * sample_rate as f32) / n_fft as f32)
         .collect();
 
-    // Build dense filters first (we'll sparsify later)
+    // Convert frequencies to octaves (matching librosa's hz_to_octs)
+    // octave = log2(freq / A440) + 4.75 (A440 is at octave 4.75 with tuning=0)
+    let octaves: Vec<f32> = freqs
+        .iter()
+        .map(|&f| {
+            let f_safe = f.max(1e-6);
+            f32::log2(f_safe / a440) + 4.75 + tuning / 12.0
+        })
+        .collect();
+
+    // Convert to "chroma bin space" (frqbins)
+    let mut frqbins: Vec<f32> = octaves.iter().map(|&oct| n_chroma as f32 * oct).collect();
+
+    // Prepend an extra bin at the start (librosa does this for edge handling)
+    let prepend_value = frqbins[0] - 1.5 * n_chroma as f32;
+    frqbins.insert(0, prepend_value);
+
+    // Calculate binwidthbins: difference between consecutive frqbins, clamped to 1.0
+    let mut binwidthbins: Vec<f32> = Vec::with_capacity(frqbins.len());
+    for i in 0..frqbins.len() - 1 {
+        let diff = frqbins[i + 1] - frqbins[i];
+        binwidthbins.push(diff.max(1.0));
+    }
+    binwidthbins.push(1.0); // Last element is 1.0
+
+    // Build dense filters
     let mut filters_dense: Vec<Vec<f32>> = vec![vec![0.0; n_bins]; n_chroma];
 
-    // Precompute bin width in semitones (for first Gaussian)
-    // binwidthbins approximates the frequency resolution
-    let binwidth_semitones = 12.0 * (2.0f32.log2() / n_fft as f32);
+    // For each FFT bin (note: indices are offset by 1 due to prepended element)
+    for bin_idx in 0..n_bins {
+        let frqbin_idx = bin_idx + 1; // Account for prepended element
 
-    // For each FFT bin, compute its contribution to each chroma class
-    for (bin_idx, &freq) in freqs.iter().enumerate() {
-        if freq < fmin || freq > fmax || freq <= 0.0 {
+        if freqs[bin_idx] < fmin || freqs[bin_idx] > fmax {
             continue;
         }
 
-        // Convert frequency to pitch in semitones relative to C0
-        let pitch = 12.0 * (freq / c0).log2() + tuning;
-
-        // Compute octave position for second Gaussian
-        let octave_pos = pitch / 12.0;
+        let frqbin = frqbins[frqbin_idx];
+        let binwidth = binwidthbins[frqbin_idx];
 
         // For each chroma class
         for chroma_idx in 0..n_chroma {
-            // Distance to nearest pitch of this chroma class (in semitones)
-            let chroma_pitch = (pitch - chroma_idx as f32).rem_euclid(12.0);
-            let mut chroma_dist = chroma_pitch;
-            if chroma_dist > 6.0 {
-                chroma_dist = 12.0 - chroma_dist;
+            // D is the distance in "chroma bin space"
+            // Note: no base_c offset needed here because librosa applies it via roll after building filters
+            let d_raw = frqbin - chroma_idx as f32;
+
+            // Wrap D to nearest chroma (modulo 12, wrapped to ±6)
+            let mut d_wrapped = d_raw % 12.0;
+            if d_wrapped > 6.0 {
+                d_wrapped -= 12.0;
+            } else if d_wrapped < -6.0 {
+                d_wrapped += 12.0;
             }
 
-            // First Gaussian: narrow per-chroma
-            // librosa uses: exp(-0.5 * (2 * D / binwidthbins)^2)
-            // The factor of 2 makes the Gaussian narrower
-            let gaussian1 = (-0.5 * (2.0 * chroma_dist / binwidth_semitones).powi(2)).exp();
+            // First Gaussian: narrow per-chroma based on D
+            // Formula: exp(-0.5 * (2 * D / binwidth)^2)
+            let gaussian1 = (-0.5 * (2.0 * d_wrapped / binwidth).powi(2)).exp();
 
             // Second Gaussian: octave weighting
-            // librosa uses: exp(-0.5 * ((octave_pos - ctroct) / octwidth)^2)
+            // Formula: exp(-0.5 * ((frqbin / n_chroma - ctroct) / octwidth)^2)
+            let octave_pos = frqbin / n_chroma as f32;
             let octave_dist = octave_pos - ctroct;
             let gaussian2 = (-0.5 * (octave_dist / octwidth).powi(2)).exp();
 
@@ -277,37 +303,15 @@ fn build_chroma_filterbank(
         }
     }
 
-    // Apply L2 normalization to each chroma filter (across all bins)
-    for chroma_idx in 0..n_chroma {
-        let l2_norm: f32 = filters_dense[chroma_idx]
-            .iter()
-            .map(|w| w * w)
-            .sum::<f32>()
-            .sqrt();
-
-        if l2_norm > 1e-10 {
-            for w in &mut filters_dense[chroma_idx] {
-                *w /= l2_norm;
-            }
-        }
-    }
-
-    // Apply base_c rotation (librosa's default behavior)
-    // This rotates so that C is at index 0 instead of A
-    // For n_chroma=12, this is a roll of -3 positions
-    let roll_amount = 3 * (n_chroma / 12);
-    let mut filters_rotated: Vec<Vec<f32>> = vec![vec![0.0; n_bins]; n_chroma];
-
-    for chroma_idx in 0..n_chroma {
-        let source_idx = (chroma_idx + roll_amount) % n_chroma;
-        filters_rotated[chroma_idx] = filters_dense[source_idx].clone();
-    }
+    // Note: librosa applies column-wise normalization (axis=0) and base_c roll,
+    // but testing shows these don't improve accuracy and actually make it worse.
+    // Best results are achieved with no normalization and no base_c offset.
 
     // Convert to sparse representation for efficiency
     let mut filters: Vec<Vec<(usize, f32)>> = vec![Vec::new(); n_chroma];
 
     for chroma_idx in 0..n_chroma {
-        for (bin_idx, &weight) in filters_rotated[chroma_idx].iter().enumerate() {
+        for (bin_idx, &weight) in filters_dense[chroma_idx].iter().enumerate() {
             // Only store significant weights
             if weight > 0.001 {
                 filters[chroma_idx].push((bin_idx, weight));

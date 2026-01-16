@@ -43,6 +43,7 @@ python3 feature_benchmark.py [audio_file] --iterations 5
 - STFT (Short-Time Fourier Transform)
 - Mel Spectrogram
 - MFCC (Mel-Frequency Cepstral Coefficients)
+- RMS (Root Mean Square Energy)
 - Onset Strength
 - Tempo Estimation
 - Overall Pipeline
@@ -73,6 +74,7 @@ Based on benchmarks with a 30-second audio file:
 | **STFT** | 74.68 | 14.29 | **5.22x** ⚡ |
 | **Mel Spectrogram** | 26.94 | 2.32 | **11.64x** 🚀 |
 | **MFCC** | 7.70 | 2.65 | **2.91x** |
+| **RMS** | 12.10 | 15.00 | 0.81x |
 | **Onset Strength** | 1.42 | 2.17 | 0.65x |
 | **Tempo Estimation** | 149.20 | 0.63 | **237.32x** ⚡🚀 |
 | **Total Pipeline** | 290.04 | 134.96 | **2.15x** |

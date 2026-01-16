@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rsona::{
     audio,
-    feature::{MfccConfig, mfcc, onset_strength_from_mel},
+    feature::{MfccConfig, mfcc, onset_strength_from_mel, rms},
     signal::{FrameConfig, frame},
     spectrum::{DbConfig, MelConfig, StftConfig, mel_spectrogram, stft},
     temporal::estimate_tempo,
@@ -26,6 +26,7 @@ struct TimingBreakdown {
     stft_ms: f64,
     mel_ms: f64,
     mfcc_ms: f64,
+    rms_ms: f64,
     onset_ms: f64,
     tempo_ms: f64,
 }
@@ -57,17 +58,21 @@ fn main() {
     let mfcc_time = t4.elapsed();
 
     let t5 = Instant::now();
-    let onset = onset_strength_from_mel(&mel, DbConfig::default());
-    let onset_time = t5.elapsed();
+    let _rms_result = rms(&frames);
+    let rms_time = t5.elapsed();
 
     let t6 = Instant::now();
+    let onset = onset_strength_from_mel(&mel, DbConfig::default());
+    let onset_time = t6.elapsed();
+
+    let t7 = Instant::now();
     let tempo = estimate_tempo(
         onset.values(),
         frames.sample_rate(),
         frames.hop_size(),
         Default::default(),
     );
-    let tempo_time = t6.elapsed();
+    let tempo_time = t7.elapsed();
 
     let elapsed = t_total.elapsed().as_secs_f64();
 
@@ -78,6 +83,7 @@ fn main() {
             stft_ms: stft_time.as_secs_f64() * 1000.0,
             mel_ms: mel_time.as_secs_f64() * 1000.0,
             mfcc_ms: mfcc_time.as_secs_f64() * 1000.0,
+            rms_ms: rms_time.as_secs_f64() * 1000.0,
             onset_ms: onset_time.as_secs_f64() * 1000.0,
             tempo_ms: tempo_time.as_secs_f64() * 1000.0,
         })
@@ -122,6 +128,11 @@ fn main() {
                 "MFCC:        {:>8.2} ms ({:>5.1}%)",
                 t.mfcc_ms,
                 t.mfcc_ms / elapsed / 10.0
+            );
+            eprintln!(
+                "RMS:         {:>8.2} ms ({:>5.1}%)",
+                t.rms_ms,
+                t.rms_ms / elapsed / 10.0
             );
             eprintln!(
                 "Onset:       {:>8.2} ms ({:>5.1}%)",

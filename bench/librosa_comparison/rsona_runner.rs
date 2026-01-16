@@ -472,12 +472,25 @@ impl BenchmarkRunner {
         let chroma = chroma_stft(&spec, chroma_cfg);
         let t_end = Instant::now();
 
-        let values = chroma.as_slice();
-        let mean = values.iter().sum::<f32>() / values.len() as f32;
-        let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
+        // Transpose chroma from (n_frames, n_chroma) to (n_chroma, n_frames) to match librosa
+        let n_frames = chroma.n_frames();
+        let n_chroma = chroma.n_chroma();
+        let mut transposed = vec![0.0f32; n_frames * n_chroma];
+
+        for frame_idx in 0..n_frames {
+            for chroma_idx in 0..n_chroma {
+                let src_idx = frame_idx * n_chroma + chroma_idx;
+                let dst_idx = chroma_idx * n_frames + frame_idx;
+                transposed[dst_idx] = chroma.as_slice()[src_idx];
+            }
+        }
+
+        let mean = transposed.iter().sum::<f32>() / transposed.len() as f32;
+        let variance =
+            transposed.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / transposed.len() as f32;
         let std = variance.sqrt();
-        let min = values.iter().copied().fold(f32::INFINITY, f32::min);
-        let max = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let min = transposed.iter().copied().fold(f32::INFINITY, f32::min);
+        let max = transposed.iter().copied().fold(f32::NEG_INFINITY, f32::max);
 
         Ok(BenchmarkResult {
             r#impl: "rsona".to_string(),
@@ -491,7 +504,7 @@ impl BenchmarkRunner {
                 shape: Some(vec![chroma.n_chroma(), chroma.n_frames()]),
                 value: None,
             }),
-            output: Some(serde_json::to_value(values)?),
+            output: Some(serde_json::to_value(&transposed)?),
         })
     }
 

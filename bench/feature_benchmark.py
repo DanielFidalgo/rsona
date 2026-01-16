@@ -46,6 +46,11 @@ def time_librosa_features(audio_path: str) -> Dict[str, float]:
     mfcc = librosa.feature.mfcc(S=librosa.power_to_db(mel))
     timings["mfcc"] = time.perf_counter() - t0
 
+    # RMS
+    t0 = time.perf_counter()
+    rms = librosa.feature.rms(y=y)
+    timings["rms"] = time.perf_counter() - t0
+
     # Onset Strength
     t0 = time.perf_counter()
     onset = librosa.onset.onset_strength(S=mel, sr=sr)
@@ -119,6 +124,7 @@ def time_rsona_features(audio_path: str, bench_dir: Path) -> Dict[str, float]:
                     "stft": data["timings"]["stft_ms"] / 1000.0,
                     "mel": data["timings"]["mel_ms"] / 1000.0,
                     "mfcc": data["timings"]["mfcc_ms"] / 1000.0,
+                    "rms": data["timings"]["rms_ms"] / 1000.0,
                     "onset": data["timings"]["onset_ms"] / 1000.0,
                     "tempo": data["timings"]["tempo_ms"] / 1000.0,
                     "total": data["time_sec"],
@@ -192,6 +198,7 @@ def analyze_feature_results(
         "stft": "stft",
         "mel": "mel",
         "mfcc": "mfcc",
+        "rms": "rms",
         "onset": "onset",
         "tempo": "tempo",
         "total": "total",
@@ -253,7 +260,7 @@ def format_feature_report(analysis: Dict[str, Dict[str, Any]], audio_path: str) 
     report.append("| Feature | librosa (ms) | rsona (ms) | Speedup |")
     report.append("|---------|--------------|------------|---------|")
 
-    feature_order = ["stft", "mel", "mfcc", "onset", "tempo", "total"]
+    feature_order = ["stft", "mel", "mfcc", "rms", "onset", "tempo", "total"]
 
     for feat in feature_order:
         if feat in analysis:

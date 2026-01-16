@@ -36,6 +36,7 @@ def run_librosa_benchmark(audio_path: str) -> Dict[str, Any]:
         S=np.abs(S) ** 2, sr=sr, n_fft=2048, hop_length=512
     )
     mfcc = librosa.feature.mfcc(S=librosa.power_to_db(mel))
+    rms = librosa.feature.rms(y=y)
     onset = librosa.onset.onset_strength(S=mel, sr=sr)
     tempo = librosa.feature.rhythm.tempo(onset_envelope=onset, sr=sr)[0]
 
