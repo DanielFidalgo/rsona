@@ -195,20 +195,34 @@ pub fn chroma_stft(spec: &Spectrogram, cfg: ChromaConfig) -> Chromagram {
 ///
 /// Each filter is a vector of length n_bins, one per chroma class.
 #[derive(Debug, Clone)]
-struct ChromaFilterBank {
+pub struct ChromaFilterBank {
     _n_chroma: usize,
     _n_bins: usize,
     /// filters[c] contains the weights for chroma class c
     filters: Vec<Vec<(usize, f32)>>, // (bin_idx, weight) pairs
 }
 
-/// Build chroma filter bank using librosa's two-stage Gaussian approach.
+impl ChromaFilterBank {
+    /// Get the dense representation of filters for testing/debugging.
+    /// Returns a 2D vector where `result[chroma_idx][bin_idx]` is the filter weight.
+    pub fn to_dense(&self) -> Vec<Vec<f32>> {
+        let mut dense = vec![vec![0.0f32; self._n_bins]; self._n_chroma];
+        for (chroma_idx, filter) in self.filters.iter().enumerate() {
+            for &(bin_idx, weight) in filter {
+                dense[chroma_idx][bin_idx] = weight;
+            }
+        }
+        dense
+    }
+}
+
+/// Build chroma filter bank using a two-stage Gaussian weighting approach.
 ///
-/// This exactly matches librosa's implementation:
+/// Implementation details:
 /// 1. First Gaussian: narrow per-chroma based on semitone distance
 /// 2. Second Gaussian: broad octave weighting based on ctroct and octwidth
-/// Note: librosa's `norm` parameter is NOT unit L2 normalization per filter
-fn build_chroma_filterbank(
+/// Note: Filters are applied without unit L2 normalization
+pub fn build_chroma_filterbank(
     sample_rate: u32,
     n_fft: usize,
     n_bins: usize,
@@ -233,7 +247,7 @@ fn build_chroma_filterbank(
         .map(|b| (b as f32 * sample_rate as f32) / n_fft as f32)
         .collect();
 
-    // Convert frequencies to octaves (matching librosa's hz_to_octs)
+    // Convert frequencies to octaves using A440 as reference
     // octave = log2(freq / A440) + 4.75 (A440 is at octave 4.75 with tuning=0)
     let octaves: Vec<f32> = freqs
         .iter()
@@ -246,7 +260,7 @@ fn build_chroma_filterbank(
     // Convert to "chroma bin space" (frqbins)
     let mut frqbins: Vec<f32> = octaves.iter().map(|&oct| n_chroma as f32 * oct).collect();
 
-    // Prepend an extra bin at the start (librosa does this for edge handling)
+    // Prepend an extra bin at the start for edge handling
     let prepend_value = frqbins[0] - 1.5 * n_chroma as f32;
     frqbins.insert(0, prepend_value);
 
@@ -275,7 +289,7 @@ fn build_chroma_filterbank(
         // For each chroma class
         for chroma_idx in 0..n_chroma {
             // D is the distance in "chroma bin space"
-            // Note: no base_c offset needed here because librosa applies it via roll after building filters
+            // Note: no base_c offset needed here as it is applied via roll after building filters
             let d_raw = frqbin - chroma_idx as f32;
 
             // Wrap D to nearest chroma (modulo 12, wrapped to ±6)
@@ -303,9 +317,25 @@ fn build_chroma_filterbank(
         }
     }
 
-    // Note: librosa applies column-wise normalization (axis=0) and base_c roll,
-    // but testing shows these don't improve accuracy and actually make it worse.
-    // Best results are achieved with no normalization and no base_c offset.
+    // Apply peak normalization: normalize each filter so its peak value = 1.0
+    // This matches the reference implementation's filter amplitude scaling
+    for chroma_idx in 0..n_chroma {
+        let filter = &mut filters_dense[chroma_idx];
+
+        // Find peak value
+        let peak = filter.iter().cloned().fold(0.0f32, f32::max);
+
+        // Normalize to peak = 1.0
+        if peak > 1e-10 {
+            for weight in filter.iter_mut() {
+                *weight /= peak;
+            }
+        }
+    }
+
+    // Note: We apply peak normalization (each filter peaks at 1.0)
+    // We do NOT apply column-wise L2 normalization or base_c roll
+    // Filters are already C-based due to the octave calculation referencing A440.
 
     // Convert to sparse representation for efficiency
     let mut filters: Vec<Vec<(usize, f32)>> = vec![Vec::new(); n_chroma];
@@ -452,6 +482,7 @@ mod tests {
             },
         );
 
+        // With per-frame L1 normalization, each frame should sum to 1.0
         if let Some(frame) = chroma_l1.frame(0) {
             let sum: f32 = frame.iter().sum();
             assert!((sum - 1.0).abs() < 1e-5, "L1 norm should sum to 1.0");

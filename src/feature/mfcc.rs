@@ -10,11 +10,50 @@ use crate::spectrum::MelSpectrogram;
 
 use ndarray::{ArrayView2, ShapeBuilder};
 use rayon::prelude::*;
+use rustfft::FftPlanner;
+use rustfft::num_complex::Complex;
 use std::cell::RefCell;
 
-// Thread-local buffers to avoid repeated allocation in parallel MFCC computation
+// Thread-local cache for DCT computation
 thread_local! {
     static MFCC_BUFFERS: RefCell<(Vec<f32>, Vec<f32>)> = RefCell::new((Vec::new(), Vec::new()));
+    static DCT_CACHE: RefCell<DctCache> = RefCell::new(DctCache::new());
+}
+
+/// Cache for DCT computation to avoid repeated allocations and FFT planning
+struct DctCache {
+    planner: FftPlanner<f32>,
+    fft_buffer: Vec<Complex<f32>>,
+    twiddle_factors: Vec<Complex<f32>>,
+    cached_size: usize,
+}
+
+impl DctCache {
+    fn new() -> Self {
+        Self {
+            planner: FftPlanner::new(),
+            fft_buffer: Vec::new(),
+            twiddle_factors: Vec::new(),
+            cached_size: 0,
+        }
+    }
+
+    fn prepare(&mut self, n: usize) {
+        if self.cached_size != n {
+            self.fft_buffer.resize(n, Complex::new(0.0, 0.0));
+            self.twiddle_factors.resize(n, Complex::new(0.0, 0.0));
+
+            // Pre-compute twiddle factors for phase correction
+            // e^(-i*pi*k/(2n))
+            let factor = -std::f32::consts::PI / (2.0 * n as f32);
+            for k in 0..n {
+                let angle = factor * k as f32;
+                self.twiddle_factors[k] = Complex::new(angle.cos(), angle.sin());
+            }
+
+            self.cached_size = n;
+        }
+    }
 }
 
 /// DCT normalization.
@@ -104,29 +143,46 @@ pub fn mfcc(mel: &MelSpectrogram, cfg: MfccConfig) -> MfccResult {
     // We need to do this in two passes to apply top_db clipping correctly
     let mut log_mel = vec![0.0f32; n_frames * n_mels];
 
-    // First pass: compute log values
-    for t in 0..n_frames {
-        let x = mel.frame(t).expect("n_frames mismatch");
-        let log_row = &mut log_mel[t * n_mels..(t + 1) * n_mels];
+    // First pass: compute log values (parallelized for better performance)
+    if n_frames > 10 {
+        log_mel
+            .par_chunks_mut(n_mels)
+            .enumerate()
+            .for_each(|(t, log_row)| {
+                let x = mel.frame(t).expect("n_frames mismatch");
+                for m in 0..n_mels {
+                    let v = x[m].max(cfg.log_floor);
+                    log_row[m] = 10.0 * v.log10();
+                }
+            });
+    } else {
+        for t in 0..n_frames {
+            let x = mel.frame(t).expect("n_frames mismatch");
+            let log_row = &mut log_mel[t * n_mels..(t + 1) * n_mels];
 
-        for m in 0..n_mels {
-            let v = x[m].max(cfg.log_floor);
-            log_row[m] = 10.0 * v.log10();
+            for m in 0..n_mels {
+                let v = x[m].max(cfg.log_floor);
+                log_row[m] = 10.0 * v.log10();
+            }
         }
     }
 
     // Apply top_db clipping: ensure no value is more than top_db below the maximum
     if cfg.top_db > 0.0 {
-        let max_db = log_mel.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        // Parallelize max finding
+        let max_db = log_mel
+            .par_iter()
+            .cloned()
+            .reduce(|| f32::NEG_INFINITY, f32::max);
         let threshold = max_db - cfg.top_db;
 
-        for val in log_mel.iter_mut() {
+        // Parallelize threshold application
+        log_mel.par_iter_mut().for_each(|val| {
             *val = val.max(threshold);
-        }
+        });
     }
 
-    // Step 2: Apply DCT-II to get MFCCs
-    let dct = dct2_matrix(n_mfcc, n_mels, cfg.dct_norm);
+    // Step 2: Apply DCT-II to get MFCCs using FFT-based approach
     let mut out = vec![0.0f32; n_frames * n_mfcc];
 
     // Parallelize for large frame counts
@@ -135,32 +191,14 @@ pub fn mfcc(mel: &MelSpectrogram, cfg: MfccConfig) -> MfccResult {
             .enumerate()
             .for_each(|(t, out_row)| {
                 let log_row = &log_mel[t * n_mels..(t + 1) * n_mels];
-
-                // DCT: y[k] = sum_m dct[k,m] * log_row[m]
-                for k in 0..n_mfcc {
-                    let dct_row = &dct[k * n_mels..(k + 1) * n_mels];
-                    let mut acc = 0.0f32;
-                    for m in 0..n_mels {
-                        acc += dct_row[m] * log_row[m];
-                    }
-                    out_row[k] = acc;
-                }
+                dct2_fft_frame(log_row, out_row, n_mfcc, cfg.dct_norm);
             });
     } else {
         // Sequential path
         for t in 0..n_frames {
             let log_row = &log_mel[t * n_mels..(t + 1) * n_mels];
             let out_row = &mut out[t * n_mfcc..(t + 1) * n_mfcc];
-
-            // DCT: y[k] = sum_m dct[k,m] * log_row[m]
-            for k in 0..n_mfcc {
-                let dct_row = &dct[k * n_mels..(k + 1) * n_mels];
-                let mut acc = 0.0f32;
-                for m in 0..n_mels {
-                    acc += dct_row[m] * log_row[m];
-                }
-                out_row[k] = acc;
-            }
+            dct2_fft_frame(log_row, out_row, n_mfcc, cfg.dct_norm);
         }
     }
 
@@ -177,37 +215,64 @@ pub fn mfcc(mel: &MelSpectrogram, cfg: MfccConfig) -> MfccResult {
     }
 }
 
-/// Create a DCT-II matrix of shape (n_mfcc, n_mels), row-major.
+/// FFT-based DCT-II computation for a single frame.
 ///
-/// DCT-II:
+/// This uses an optimized FFT-based algorithm:
+/// 1. Reorder input to prepare for FFT
+/// 2. Apply n-point FFT (not 2n)
+/// 3. Apply pre-computed phase correction
+/// 4. Extract real parts
+///
+/// This is O(n log n) instead of O(n²) for the naive matrix approach.
+///
+/// DCT-II formula:
 /// X_k = sum_{n=0}^{N-1} x_n * cos(pi/N * (n + 0.5) * k)
-///
-/// Ortho norm:
-/// k=0: sqrt(1/N)
-/// k>0: sqrt(2/N)
-fn dct2_matrix(n_mfcc: usize, n_mels: usize, norm: DctNorm) -> Vec<f32> {
-    let n = n_mels as f32;
-    let mut mat = vec![0.0f32; n_mfcc * n_mels];
+#[inline(always)]
+fn dct2_fft_frame(input: &[f32], output: &mut [f32], n_mfcc: usize, norm: DctNorm) {
+    let n = input.len();
 
-    for k in 0..n_mfcc {
-        let scale = match norm {
-            DctNorm::None => 1.0,
-            DctNorm::Ortho => {
-                if k == 0 {
-                    (1.0 / n).sqrt()
-                } else {
-                    (2.0 / n).sqrt()
-                }
-            }
+    DCT_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        cache.prepare(n);
+
+        let fft = cache.planner.plan_fft_forward(n);
+
+        // Reorder input for efficient DCT via FFT
+        // Even indices: x[0], x[2], x[4], ...
+        // Odd indices (reversed): x[n-1], x[n-3], x[n-5], ...
+        let half = (n + 1) / 2;
+        for i in 0..half {
+            cache.fft_buffer[i] = Complex::new(input[2 * i], 0.0);
+        }
+        for i in 0..(n - half) {
+            let src_idx = n - 2 * i - 1;
+            cache.fft_buffer[half + i] = Complex::new(input[src_idx], 0.0);
+        }
+
+        // Apply FFT
+        fft.process(&mut cache.fft_buffer);
+
+        // Extract DCT coefficients with pre-computed twiddle factors
+        let base_scale = match norm {
+            DctNorm::None => 2.0,
+            DctNorm::Ortho => (2.0 / n as f32).sqrt(),
         };
 
-        for m in 0..n_mels {
-            let angle = std::f32::consts::PI / n * (m as f32 + 0.5) * k as f32;
-            mat[k * n_mels + m] = scale * angle.cos();
-        }
-    }
+        for k in 0..n_mfcc.min(n) {
+            // Apply phase correction using pre-computed twiddle factors
+            let twiddle = cache.twiddle_factors[k];
+            let real = cache.fft_buffer[k].re * twiddle.re - cache.fft_buffer[k].im * twiddle.im;
 
-    mat
+            // Apply normalization
+            let scale = if norm == DctNorm::Ortho && k == 0 {
+                base_scale / 2.0f32.sqrt()
+            } else {
+                base_scale
+            };
+
+            output[k] = real * scale;
+        }
+    });
 }
 
 /// Apply cepstral lifter in-place.

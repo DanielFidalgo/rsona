@@ -1,8 +1,8 @@
-# RMS Benchmark Results: rsona vs librosa
+# RMS Benchmark Results: rsona Performance Analysis
 
 ## Summary
 
-RMS (Root Mean Square) feature extraction has been integrated into the rsona benchmark suite. This document presents performance comparison results between rsona and librosa implementations.
+RMS (Root Mean Square) feature extraction has been integrated into the rsona benchmark suite. This document presents performance comparison results between rsona and reference implementations.
 
 ## Benchmark Setup
 
@@ -19,8 +19,8 @@ RMS (Root Mean Square) feature extraction has been integrated into the rsona ben
 
 ### Feature-by-Feature Comparison
 
-| Feature | librosa (ms) | rsona (ms) | Speedup | Status |
-|---------|--------------|------------|---------|--------|
+| Feature | Baseline (ms) | rsona (ms) | Speedup | Status |
+|---------|---------------|------------|---------|--------|
 | STFT | 60.52 | 13.67 | **4.43x** | ✅ Faster |
 | Mel Spectrogram | 22.53 | 2.09 | **10.78x** | ✅ Much faster |
 | MFCC | 6.25 | 4.81 | **1.30x** | ✅ Faster |
@@ -31,7 +31,7 @@ RMS (Root Mean Square) feature extraction has been integrated into the rsona ben
 
 ### RMS-Specific Analysis
 
-**librosa RMS:** 12.10 ms (average)
+**Reference RMS:** 12.10 ms (average)
 - Highly optimized NumPy vectorized operations
 - Benefits from BLAS/LAPACK acceleration
 - Mature, production-tested implementation
@@ -39,13 +39,13 @@ RMS (Root Mean Square) feature extraction has been integrated into the rsona ben
 **rsona RMS:** 15.00 ms (average)
 - Pure Rust implementation with iterator-based computation
 - ~19.9% of total pipeline time (15.15ms out of 75.98ms)
-- **24% slower than librosa** for this specific feature
+- **24% slower than baseline** for this specific feature
 
 ## Analysis
 
 ### Why is rsona RMS slightly slower?
 
-1. **NumPy optimization:** librosa's RMS leverages highly optimized NumPy operations with SIMD and BLAS acceleration
+1. **NumPy optimization:** Reference implementation leverages highly optimized NumPy operations with SIMD and BLAS acceleration
 2. **Frame processing:** rsona processes 10,976 frames individually, while NumPy can batch operations more efficiently
 3. **Memory layout:** NumPy's contiguous array operations vs. Rust's iterator-based approach
 4. **Trade-offs:** Rust prioritizes safety and correctness over raw speed in this case
@@ -69,7 +69,7 @@ Potential improvements for rsona RMS:
 3. **Memory layout:** Pre-allocate and reuse buffers more efficiently
 4. **Algorithm optimization:** Consider specialized fast paths for common cases
 
-Expected improvement: **2-3x faster** with these optimizations, bringing rsona RMS to parity or ahead of librosa.
+Expected improvement: **2-3x faster** with these optimizations, bringing rsona RMS to parity or ahead of baseline.
 
 ## Accuracy Verification
 
@@ -102,7 +102,7 @@ RMS is the **second-largest contributor** to pipeline time after framing. This m
 ### For Production Use
 
 ✅ **RMS implementation is production-ready:**
-- Correct implementation with 100% librosa parity
+- Correct implementation with 100% reference parity
 - Acceptable performance (~15ms for 10,976 frames)
 - Safe, deterministic, and well-tested
 - Suitable for real-time and batch processing
@@ -126,13 +126,13 @@ RMS optimization priority: **Medium**
 - ⏭️ Framing (28.1% of pipeline time - potential for improvement)
 
 **Lower priority optimizations:**
-- RMS (only 3ms slower than librosa, minimal impact on total)
+- RMS (only 3ms slower than baseline, minimal impact on total)
 - Onset strength (already fast at 1.14ms)
 
 ## Conclusion
 
 The RMS feature has been successfully integrated into rsona with:
-- ✅ **Correct implementation** - 100% parity with librosa
+- ✅ **Correct implementation** - 100% parity with reference
 - ✅ **Comprehensive testing** - All tests pass
 - ✅ **Good performance** - 15ms for 10,976 frames
 - ✅ **Well documented** - Complete API and usage docs

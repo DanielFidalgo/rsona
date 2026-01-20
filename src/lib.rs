@@ -2,8 +2,7 @@
 //!
 //! rsona is a Rust-native library for audio feature extraction and music
 //! structure analysis. It provides deterministic, scalable primitives for
-//! building MIR pipelines, inspired by common workflows popularized by tools
-//! such as librosa.
+//! building MIR pipelines, inspired by common workflows in the MIR community.
 //!
 //! ## Design
 //!
@@ -22,8 +21,10 @@
 /// Load audio file.
 pub mod audio;
 pub mod feature;
+pub mod pipeline;
 pub mod signal;
 pub mod similarity;
 pub mod spectrum;
 pub mod structure;
 pub mod temporal;
+pub mod utils;

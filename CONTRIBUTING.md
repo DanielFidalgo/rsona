@@ -10,7 +10,7 @@ rsona is a Rust-native library for music information retrieval (MIR) and audio s
 
 rsona is an independent Rust implementation of common music information retrieval (MIR) techniques.
 
-Contributors may study existing libraries (such as librosa) and academic references to understand algorithms and expected behavior. However, implementations must be written independently and must not involve direct copying or mechanical translation of source code from other projects.
+Contributors may study existing libraries and academic references to understand algorithms and expected behavior. However, implementations must be written independently and must not involve direct copying or mechanical translation of source code from other projects.
 
 The goal is to reimplement ideas and algorithms, not reuse code or documentation text.
 

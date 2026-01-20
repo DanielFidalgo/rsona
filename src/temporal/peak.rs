@@ -1,7 +1,7 @@
 //! Generic peak picking for 1D curves.
 //!
-//! This implementation is inspired by common MIR practice and librosa-style
-//! peak picking, but is fully generic and reusable.
+//! This implementation is inspired by common MIR practice and standard
+//! peak picking approaches, and is fully generic and reusable.
 
 /// Configuration for peak picking.
 #[derive(Debug, Clone)]

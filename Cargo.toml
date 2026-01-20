@@ -46,15 +46,23 @@ name = "loopfinder_bench_chroma"
 path = "bench/loopfinder_bench_chroma.rs"
 
 [[bin]]
+name = "loopfinder_bench_beats"
+path = "bench/loopfinder_bench_beats.rs"
+
+[[bin]]
 name = "rsona_runner"
 path = "bench/librosa_comparison/rsona_runner.rs"
+
+[[bin]]
+name = "mfcc_benchmark"
+path = "bench/mfcc_benchmark.rs"
 
 [profile.release]
 opt-level = 3
 lto = "fat"
 codegen-units = 1
 strip = true
-panic = "abort"
+panic = "unwind"
 # For maximum performance with SIMD, build with:
 # RUSTFLAGS="-C target-cpu=native" cargo build --release
 

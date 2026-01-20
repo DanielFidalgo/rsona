@@ -75,10 +75,10 @@ pub struct FrameConfig {
     /// If true, center the frames by padding the signal at both ends.
     ///
     /// When enabled, pads `frame_size / 2` zeros at the start and end of the signal,
-    /// ensuring the first frame is centered at sample 0. This matches librosa's
+    /// ensuring the first frame is centered at sample 0. This is the standard
     /// default behavior (`center=True`).
     ///
-    /// Default: `true` (matches librosa).
+    /// Default: `true` (standard default).
     pub center: bool,
 }
 
@@ -90,6 +90,76 @@ impl Default for FrameConfig {
             window: Window::Hann,
             padding: Padding::ZeroPadEnd,
             channel_mode: ChannelMode::Channel(0),
+            center: true,
+        }
+    }
+}
+
+impl FrameConfig {
+    /// Standard audio analysis preset (2048 frame size, 512 hop, mono mix).
+    ///
+    /// This is the most common configuration used throughout rsona's
+    /// benchmarks and examples. It provides a good balance between
+    /// time and frequency resolution for general audio analysis.
+    ///
+    /// Configuration:
+    /// - Frame size: 2048 samples (~46ms at 44.1kHz)
+    /// - Hop size: 512 samples (~12ms at 44.1kHz)
+    /// - Window: Hann
+    /// - Center: true
+    /// - Channel mode: Mix to mono (average)
+    pub fn standard() -> Self {
+        Self {
+            frame_size: 2048,
+            hop_size: 512,
+            window: Window::Hann,
+            padding: Padding::ZeroPadEnd,
+            channel_mode: ChannelMode::MixDownAverage,
+            center: true,
+        }
+    }
+
+    /// Music analysis preset (4096 frame size, 1024 hop, mono mix).
+    ///
+    /// Higher resolution for detailed harmonic and spectral analysis.
+    /// Provides better frequency resolution at the cost of lower
+    /// time resolution.
+    ///
+    /// Configuration:
+    /// - Frame size: 4096 samples (~93ms at 44.1kHz)
+    /// - Hop size: 1024 samples (~23ms at 44.1kHz)
+    /// - Window: Hann
+    /// - Center: true
+    /// - Channel mode: Mix to mono (average)
+    pub fn music() -> Self {
+        Self {
+            frame_size: 4096,
+            hop_size: 1024,
+            window: Window::Hann,
+            padding: Padding::ZeroPadEnd,
+            channel_mode: ChannelMode::MixDownAverage,
+            center: true,
+        }
+    }
+
+    /// Speech analysis preset (512 frame size, 256 hop, mono mix).
+    ///
+    /// Lower latency configuration suitable for real-time speech
+    /// processing and applications requiring fast updates.
+    ///
+    /// Configuration:
+    /// - Frame size: 512 samples (~12ms at 44.1kHz)
+    /// - Hop size: 256 samples (~6ms at 44.1kHz)
+    /// - Window: Hann
+    /// - Center: true
+    /// - Channel mode: Mix to mono (average)
+    pub fn speech() -> Self {
+        Self {
+            frame_size: 512,
+            hop_size: 256,
+            window: Window::Hann,
+            padding: Padding::ZeroPadEnd,
+            channel_mode: ChannelMode::MixDownAverage,
             center: true,
         }
     }
@@ -213,7 +283,7 @@ pub fn frame(audio: &Buffer, config: FrameConfig) -> Result<Frames, SignalError>
     // 1) Extract a single-channel signal (explicit selection or mixdown).
     let mut x = extract_channel(audio, config.channel_mode)?;
 
-    // 2) Apply center padding if requested (librosa-compatible).
+    // 2) Apply center padding if requested (standard behavior).
     //    Pads frame_size/2 zeros at start and end, centering first frame at sample 0.
     if config.center {
         let pad = config.frame_size / 2;
@@ -225,7 +295,7 @@ pub fn frame(audio: &Buffer, config: FrameConfig) -> Result<Frames, SignalError>
     // 3) Determine number of frames.
     let n = x.len();
     // When center padding is enabled, use Padding::None logic for frame counting
-    // because center padding already handles edge alignment (matches librosa behavior).
+    // because center padding already handles edge alignment (standard behavior).
     let effective_padding = if config.center {
         Padding::None
     } else {
@@ -533,7 +603,7 @@ mod tests {
             window: Window::Rectangular,
             padding: Padding::None,
             channel_mode: ChannelMode::Channel(0),
-            center: true,
+            center: false,
         };
 
         let frames = frame(&audio, cfg).unwrap();
@@ -550,7 +620,7 @@ mod tests {
             window: Window::Rectangular,
             padding: Padding::ZeroPadEnd,
             channel_mode: ChannelMode::MixDownAverage,
-            center: true,
+            center: false,
         };
 
         // MixDownAverage per frame:
@@ -570,7 +640,7 @@ mod tests {
             window: Window::Rectangular,
             padding: Padding::ZeroPadEnd,
             channel_mode: ChannelMode::Channel(0),
-            center: true,
+            center: false,
         };
 
         // starts 0,2 (<= n-1=2) => 2 frames

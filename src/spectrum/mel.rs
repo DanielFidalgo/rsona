@@ -16,7 +16,7 @@ thread_local! {
 /// Mel scaling convention.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MelScale {
-    /// Slaney-style mel scale (librosa default when `htk=false`).
+    /// Slaney-style mel scale (standard default when `htk=false`).
     Slaney,
     /// HTK mel scale.
     Htk,
@@ -35,7 +35,7 @@ pub struct MelConfig {
     pub mel_scale: MelScale,
     /// Apply Slaney-style area normalization (recommended for Slaney).
     ///
-    /// librosa uses Slaney mel scale by default and applies normalization.
+    /// Standard implementations use Slaney mel scale by default and apply normalization.
     pub normalize: bool,
 }
 
@@ -364,7 +364,7 @@ fn hz_to_mel(hz: f32, scale: MelScale) -> f32 {
         MelScale::Htk => 2595.0 * (1.0 + hz / 700.0).log10(),
         MelScale::Slaney => {
             // Slaney approximation: linear below 1 kHz, log above.
-            // Matches common MIR implementations (including librosa default `htk=false`).
+            // Matches common MIR implementations with htk=false setting.
             let f_sp = 200.0 / 3.0;
             let min_log_hz = 1000.0;
             let min_log_mel = min_log_hz / f_sp;

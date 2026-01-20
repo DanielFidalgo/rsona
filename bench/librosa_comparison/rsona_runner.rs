@@ -126,266 +126,81 @@ struct BenchmarkRunner {
     params: BenchmarkParams,
 }
 
+/// Macro to reduce boilerplate in benchmark methods.
+///
+/// Usage:
+/// ```ignore
+/// benchmark_method!(benchmark_spectral_centroid, "spectral_centroid", |pipeline| {
+///     spectral_centroid(&pipeline.spec)
+/// });
+/// ```
+macro_rules! benchmark_method {
+    ($method_name:ident, $feature_name:expr, |$p:ident| $compute:expr) => {
+        fn $method_name(
+            &self,
+            audio_path: &str,
+        ) -> Result<BenchmarkResult, Box<dyn std::error::Error>> {
+            use rsona::pipeline;
+
+            let pipeline = pipeline::standard(audio_path)?;
+
+            let t_start = Instant::now();
+            let $p = &pipeline;
+            let result = $compute;
+            let t_end = Instant::now();
+
+            let values = result.values();
+            let mean = values.iter().sum::<f32>() / values.len() as f32;
+            let variance =
+                values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
+            let std = variance.sqrt();
+            let min = values.iter().copied().fold(f32::INFINITY, f32::min);
+            let max = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+
+            Ok(BenchmarkResult {
+                r#impl: "rsona".to_string(),
+                feature: $feature_name.to_string(),
+                runtime_ms: (t_end - t_start).as_secs_f64() * 1000.0,
+                result_summary: Some(ResultSummary {
+                    mean: Some(mean),
+                    std: Some(std),
+                    min: Some(min),
+                    max: Some(max),
+                    shape: Some(vec![values.len()]),
+                    value: None,
+                }),
+                output: Some(serde_json::to_value(values)?),
+            })
+        }
+    };
+}
+
 impl BenchmarkRunner {
     fn new(params: BenchmarkParams) -> Self {
         Self { params }
     }
 
-    fn benchmark_spectral_centroid(
-        &self,
-        audio_path: &str,
-    ) -> Result<BenchmarkResult, Box<dyn std::error::Error>> {
-        let buffer = audio::load(audio_path)?;
+    benchmark_method!(benchmark_spectral_centroid, "spectral_centroid", |p| {
+        spectral_centroid(&p.spec)
+    });
 
-        let frame_cfg = FrameConfig {
-            frame_size: self.params.n_fft.unwrap_or(2048),
-            hop_size: self.params.hop_length.unwrap_or(512),
-            center: true, // Match librosa's default behavior
-            ..Default::default()
-        };
+    benchmark_method!(benchmark_spectral_bandwidth, "spectral_bandwidth", |p| {
+        spectral_bandwidth(&p.spec)
+    });
 
-        let frames = frame(&buffer, frame_cfg)?;
+    benchmark_method!(benchmark_spectral_rolloff, "spectral_rolloff", |p| {
+        spectral_rolloff(&p.spec, 0.85)
+    });
 
-        let stft_cfg = StftConfig {
-            n_fft: self.params.n_fft.unwrap_or(2048),
-            ..Default::default()
-        };
+    benchmark_method!(
+        benchmark_spectral_flux,
+        "spectral_flux",
+        |p| onset_strength(&p.spec, OnsetConfig::default())
+    );
 
-        let t_start = Instant::now();
-        let spec = stft(&frames, stft_cfg)?;
-        let centroid = spectral_centroid(&spec);
-        let t_end = Instant::now();
-
-        let values = centroid.values();
-        let mean = values.iter().sum::<f32>() / values.len() as f32;
-        let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
-        let std = variance.sqrt();
-        let min = values.iter().copied().fold(f32::INFINITY, f32::min);
-        let max = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-
-        Ok(BenchmarkResult {
-            r#impl: "rsona".to_string(),
-            feature: "spectral_centroid".to_string(),
-            runtime_ms: (t_end - t_start).as_secs_f64() * 1000.0,
-            result_summary: Some(ResultSummary {
-                mean: Some(mean),
-                std: Some(std),
-                min: Some(min),
-                max: Some(max),
-                shape: Some(vec![values.len()]),
-                value: None,
-            }),
-            output: Some(serde_json::to_value(values)?),
-        })
-    }
-
-    fn benchmark_spectral_bandwidth(
-        &self,
-        audio_path: &str,
-    ) -> Result<BenchmarkResult, Box<dyn std::error::Error>> {
-        let buffer = audio::load(audio_path)?;
-
-        let frame_cfg = FrameConfig {
-            frame_size: self.params.n_fft.unwrap_or(2048),
-            hop_size: self.params.hop_length.unwrap_or(512),
-            center: true, // Match librosa's default behavior
-            ..Default::default()
-        };
-
-        let frames = frame(&buffer, frame_cfg)?;
-
-        let stft_cfg = StftConfig {
-            n_fft: self.params.n_fft.unwrap_or(2048),
-            ..Default::default()
-        };
-
-        let t_start = Instant::now();
-        let spec = stft(&frames, stft_cfg)?;
-        let bandwidth = spectral_bandwidth(&spec);
-        let t_end = Instant::now();
-
-        let values = bandwidth.values();
-        let mean = values.iter().sum::<f32>() / values.len() as f32;
-        let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
-        let std = variance.sqrt();
-        let min = values.iter().copied().fold(f32::INFINITY, f32::min);
-        let max = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-
-        Ok(BenchmarkResult {
-            r#impl: "rsona".to_string(),
-            feature: "spectral_bandwidth".to_string(),
-            runtime_ms: (t_end - t_start).as_secs_f64() * 1000.0,
-            result_summary: Some(ResultSummary {
-                mean: Some(mean),
-                std: Some(std),
-                min: Some(min),
-                max: Some(max),
-                shape: Some(vec![values.len()]),
-                value: None,
-            }),
-            output: Some(serde_json::to_value(values)?),
-        })
-    }
-
-    fn benchmark_spectral_rolloff(
-        &self,
-        audio_path: &str,
-    ) -> Result<BenchmarkResult, Box<dyn std::error::Error>> {
-        let buffer = audio::load(audio_path)?;
-
-        let frame_cfg = FrameConfig {
-            frame_size: self.params.n_fft.unwrap_or(2048),
-            hop_size: self.params.hop_length.unwrap_or(512),
-            center: true, // Match librosa's default behavior
-            ..Default::default()
-        };
-
-        let frames = frame(&buffer, frame_cfg)?;
-
-        let stft_cfg = StftConfig {
-            n_fft: self.params.n_fft.unwrap_or(2048),
-            ..Default::default()
-        };
-
-        let t_start = Instant::now();
-        let spec = stft(&frames, stft_cfg)?;
-        let rolloff = spectral_rolloff(&spec, self.params.roll_percent.unwrap_or(0.85));
-        let t_end = Instant::now();
-
-        let values = rolloff.values();
-        let mean = values.iter().sum::<f32>() / values.len() as f32;
-        let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
-        let std = variance.sqrt();
-        let min = values.iter().copied().fold(f32::INFINITY, f32::min);
-        let max = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-
-        Ok(BenchmarkResult {
-            r#impl: "rsona".to_string(),
-            feature: "spectral_rolloff".to_string(),
-            runtime_ms: (t_end - t_start).as_secs_f64() * 1000.0,
-            result_summary: Some(ResultSummary {
-                mean: Some(mean),
-                std: Some(std),
-                min: Some(min),
-                max: Some(max),
-                shape: Some(vec![values.len()]),
-                value: None,
-            }),
-            output: Some(serde_json::to_value(values)?),
-        })
-    }
-
-    fn benchmark_spectral_flux(
-        &self,
-        audio_path: &str,
-    ) -> Result<BenchmarkResult, Box<dyn std::error::Error>> {
-        let buffer = audio::load(audio_path)?;
-
-        let frame_cfg = FrameConfig {
-            frame_size: self.params.n_fft.unwrap_or(2048),
-            hop_size: self.params.hop_length.unwrap_or(512),
-            center: true, // Match librosa's default behavior
-            ..Default::default()
-        };
-
-        let frames = frame(&buffer, frame_cfg)?;
-
-        let stft_cfg = StftConfig {
-            n_fft: self.params.n_fft.unwrap_or(2048),
-            ..Default::default()
-        };
-
-        let onset_cfg = OnsetConfig {
-            mel: MelConfig {
-                n_mels: self.params.n_mels.unwrap_or(128),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let t_start = Instant::now();
-        let spec = stft(&frames, stft_cfg)?;
-        let flux = onset_strength(&spec, onset_cfg);
-        let t_end = Instant::now();
-
-        let values = flux.values();
-        let mean = values.iter().sum::<f32>() / values.len() as f32;
-        let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
-        let std = variance.sqrt();
-        let min = values.iter().copied().fold(f32::INFINITY, f32::min);
-        let max = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-
-        Ok(BenchmarkResult {
-            r#impl: "rsona".to_string(),
-            feature: "spectral_flux".to_string(),
-            runtime_ms: (t_end - t_start).as_secs_f64() * 1000.0,
-            result_summary: Some(ResultSummary {
-                mean: Some(mean),
-                std: Some(std),
-                min: Some(min),
-                max: Some(max),
-                shape: Some(vec![values.len()]),
-                value: None,
-            }),
-            output: Some(serde_json::to_value(values)?),
-        })
-    }
-
-    fn benchmark_onset_strength(
-        &self,
-        audio_path: &str,
-    ) -> Result<BenchmarkResult, Box<dyn std::error::Error>> {
-        let buffer = audio::load(audio_path)?;
-
-        let frame_cfg = FrameConfig {
-            frame_size: self.params.n_fft.unwrap_or(2048),
-            hop_size: self.params.hop_length.unwrap_or(512),
-            center: true, // Match librosa's default behavior
-            ..Default::default()
-        };
-
-        let frames = frame(&buffer, frame_cfg)?;
-
-        let stft_cfg = StftConfig {
-            n_fft: self.params.n_fft.unwrap_or(2048),
-            ..Default::default()
-        };
-
-        let onset_cfg = OnsetConfig {
-            mel: MelConfig {
-                n_mels: self.params.n_mels.unwrap_or(128),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let t_start = Instant::now();
-        let spec = stft(&frames, stft_cfg)?;
-        let onset = onset_strength(&spec, onset_cfg);
-        let t_end = Instant::now();
-
-        let values = onset.values();
-        let mean = values.iter().sum::<f32>() / values.len() as f32;
-        let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
-        let std = variance.sqrt();
-        let min = values.iter().copied().fold(f32::INFINITY, f32::min);
-        let max = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-
-        Ok(BenchmarkResult {
-            r#impl: "rsona".to_string(),
-            feature: "onset_strength".to_string(),
-            runtime_ms: (t_end - t_start).as_secs_f64() * 1000.0,
-            result_summary: Some(ResultSummary {
-                mean: Some(mean),
-                std: Some(std),
-                min: Some(min),
-                max: Some(max),
-                shape: Some(vec![values.len()]),
-                value: None,
-            }),
-            output: Some(serde_json::to_value(values)?),
-        })
-    }
+    benchmark_method!(benchmark_onset_strength, "onset_strength", |p| {
+        onset_strength(&p.spec, OnsetConfig::default())
+    });
 
     fn benchmark_tempo(
         &self,
@@ -396,7 +211,7 @@ impl BenchmarkRunner {
         let frame_cfg = FrameConfig {
             frame_size: self.params.n_fft.unwrap_or(2048),
             hop_size: self.params.hop_length.unwrap_or(512),
-            center: true, // Match librosa's default behavior
+            center: true, // Standard default behavior
             ..Default::default()
         };
 
@@ -451,7 +266,7 @@ impl BenchmarkRunner {
         let frame_cfg = FrameConfig {
             frame_size: self.params.n_fft.unwrap_or(2048),
             hop_size: self.params.hop_length.unwrap_or(512),
-            center: true, // Match librosa's default behavior
+            center: true, // Standard default behavior
             ..Default::default()
         };
 
@@ -472,7 +287,7 @@ impl BenchmarkRunner {
         let chroma = chroma_stft(&spec, chroma_cfg);
         let t_end = Instant::now();
 
-        // Transpose chroma from (n_frames, n_chroma) to (n_chroma, n_frames) to match librosa
+        // Transpose chroma from (n_frames, n_chroma) to (n_chroma, n_frames) for output format
         let n_frames = chroma.n_frames();
         let n_chroma = chroma.n_chroma();
         let mut transposed = vec![0.0f32; n_frames * n_chroma];
@@ -517,7 +332,7 @@ impl BenchmarkRunner {
         let frame_cfg = FrameConfig {
             frame_size: self.params.n_fft.unwrap_or(2048),
             hop_size: self.params.hop_length.unwrap_or(512),
-            center: true, // Match librosa's default behavior
+            center: true, // Standard default behavior
             ..Default::default()
         };
 
@@ -576,7 +391,7 @@ impl BenchmarkRunner {
         let frame_cfg = FrameConfig {
             frame_size: self.params.n_fft.unwrap_or(2048),
             hop_size: self.params.hop_length.unwrap_or(512),
-            center: true, // Match librosa's default behavior
+            center: true, // Standard default behavior
             ..Default::default()
         };
 

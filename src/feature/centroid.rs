@@ -1,27 +1,10 @@
 //! Spectral centroid.
 
 use crate::spectrum::Spectrogram;
+use crate::utils::parallel::auto_map;
 
-/// Spectral centroid result.
-#[derive(Debug, Clone)]
-pub struct SpectralCentroid {
-    n_frames: usize,
-    values: Vec<f32>,
-}
-
-impl SpectralCentroid {
-    /// Frame count.
-    #[inline]
-    pub fn n_frames(&self) -> usize {
-        self.n_frames
-    }
-
-    /// Spectral centroid values.ß
-    #[inline]
-    pub fn values(&self) -> &[f32] {
-        &self.values
-    }
-}
+// Use macro to generate time-series feature struct
+time_series_feature!(SpectralCentroid);
 
 /// Compute spectral centroid (Hz) for each frame.
 ///
@@ -30,9 +13,7 @@ pub fn spectral_centroid(spec: &Spectrogram) -> SpectralCentroid {
     let n_frames = spec.n_frames();
     let n_bins = spec.n_bins();
 
-    let mut values = Vec::with_capacity(n_frames);
-
-    for t in 0..n_frames {
+    let values = auto_map(n_frames, |t| {
         let frame = spec.frame(t).expect("frame index out of bounds");
 
         let mut num = 0.0f32;
@@ -46,8 +27,8 @@ pub fn spectral_centroid(spec: &Spectrogram) -> SpectralCentroid {
             den += magnitude;
         }
 
-        values.push(if den > 0.0 { num / den } else { 0.0 });
-    }
+        if den > 0.0 { num / den } else { 0.0 }
+    });
 
-    SpectralCentroid { n_frames, values }
+    SpectralCentroid::new(values)
 }

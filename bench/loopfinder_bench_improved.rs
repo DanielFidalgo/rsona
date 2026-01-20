@@ -332,7 +332,7 @@ fn find_best_phase_by_similarity(
 
     let to_seconds = |frame: usize| -> f64 { frame as f64 * hop_size as f64 / sample_rate as f64 };
 
-    // Search more densely to find the phase librosa found
+    // Search more densely to find the optimal phase
     let search_start = max_start / 20; // Start earlier
     let search_end = max_start * 95 / 100; // Search almost to the end
     let step = ((search_end - search_start) / 500).max(1); // More candidates

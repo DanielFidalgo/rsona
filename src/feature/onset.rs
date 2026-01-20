@@ -1,4 +1,4 @@
-//! Librosa-style onset strength (onset envelope).
+//! Onset strength (onset envelope) computation.
 //!
 //! This computes onset strength using:
 //! - Mel spectrogram
@@ -21,7 +21,7 @@ pub struct OnsetConfig {
 
     /// Apply moving-average smoothing (window size in frames).
     ///
-    /// librosa defaults to a small smoothing window.
+    /// Standard implementations use a small smoothing window.
     pub smooth: Option<usize>,
 }
 
@@ -38,32 +38,12 @@ impl Default for OnsetConfig {
     }
 }
 
-/// Onset strength envelope.
-///
-/// One scalar per frame.
-#[derive(Debug, Clone)]
-pub struct OnsetEnvelope {
-    n_frames: usize,
-    values: Vec<f32>,
-}
-
-impl OnsetEnvelope {
-    /// Frame count.
-    #[inline]
-    pub fn n_frames(&self) -> usize {
-        self.n_frames
-    }
-
-    /// Values.
-    #[inline]
-    pub fn values(&self) -> &[f32] {
-        &self.values
-    }
-}
+// Use macro to generate time-series feature struct
+time_series_feature!(OnsetEnvelope);
 
 /// Compute onset strength envelope from a complex spectrogram.
 ///
-/// This mirrors librosa's onset strength computation:
+/// Standard onset strength computation:
 /// - mel spectrogram
 /// - log / dB scaling
 /// - positive spectral flux
@@ -76,7 +56,7 @@ pub fn onset_strength(spec: &Spectrogram, cfg: OnsetConfig) -> OnsetEnvelope {
     // 2) Compute onset from mel spectrogram
     let mut envelope = onset_strength_from_mel(&mel, cfg.db);
 
-    // 3) Apply centering shift to match librosa's center=True behavior
+    // 3) Apply centering shift to match standard center=True behavior
     // Shift by n_fft / (2 * hop_length) frames to align with centered STFT
     let n_fft = spec.n_fft();
     let hop_size = spec.hop_size();
@@ -97,7 +77,7 @@ pub fn onset_strength(spec: &Spectrogram, cfg: OnsetConfig) -> OnsetEnvelope {
 /// This is more efficient when you already have a mel spectrogram computed,
 /// avoiding redundant computation.
 ///
-/// This mirrors librosa's onset strength computation:
+/// Standard onset strength computation:
 /// - log / dB scaling
 /// - positive spectral flux
 /// - sum across mel bands
@@ -136,10 +116,7 @@ pub fn onset_strength_from_mel(mel: &MelSpectrogram, db_cfg: DbConfig) -> OnsetE
         }
     }
 
-    OnsetEnvelope {
-        n_frames,
-        values: onset,
-    }
+    OnsetEnvelope::new(onset)
 }
 
 /// Compute sum of positive differences with vectorization-friendly code

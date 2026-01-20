@@ -1,13 +1,13 @@
 //! Decibel (dB) conversions for spectral data.
 //!
-//! This module provides librosa-style conversions from power or amplitude
+//! This module provides standard conversions from power or amplitude
 //! spectrograms to decibel scale.
 
 use rayon::prelude::*;
 
 /// Configuration for decibel conversion.
 ///
-/// This mirrors librosa defaults:
+/// Standard defaults:
 /// - `ref = 1.0`
 /// - `amin = 1e-10`
 /// - `top_db = Some(80.0)`

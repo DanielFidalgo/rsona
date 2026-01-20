@@ -1,6 +1,6 @@
 # rsona Benchmarks
 
-This directory contains benchmarking tools to compare rsona's performance against librosa.
+This directory contains benchmarking tools to compare rsona's performance against reference implementations.
 
 ## Quick Start
 
@@ -69,8 +69,8 @@ Convenience script that checks dependencies, builds rsona, and runs comparisons.
 
 Based on benchmarks with a 30-second audio file:
 
-| Feature | librosa (ms) | rsona (ms) | Speedup |
-|---------|--------------|------------|---------|
+| Feature | Baseline (ms) | rsona (ms) | Speedup |
+|---------|---------------|------------|---------|
 | **STFT** | 74.68 | 14.29 | **5.22x** ⚡ |
 | **Mel Spectrogram** | 26.94 | 2.32 | **11.64x** 🚀 |
 | **MFCC** | 7.70 | 2.65 | **2.91x** |
@@ -100,7 +100,7 @@ Based on benchmarks with a 30-second audio file:
 
 #### ⚠️ Areas for Improvement
 
-- **Onset Strength**: Currently 1.5x slower than librosa
+- **Onset Strength**: Currently 1.5x slower than baseline
   - Opportunity for optimization
   - May involve different algorithmic approach
   - Still fast in absolute terms (2.17ms)
@@ -110,7 +110,7 @@ Based on benchmarks with a 30-second audio file:
 - **Full Pipeline Speedup**: 2.15x faster
 - **Consistency**: Very low standard deviation (< 2ms)
 - **Accuracy**: Perfect tempo estimation (< 0.001% difference)
-- **Frame Parity**: Exact frame count match with librosa
+- **Frame Parity**: Exact frame count match with reference implementation
 
 ## Understanding the Results
 
@@ -138,7 +138,7 @@ Without warmup, the first iteration can be 2-4x slower, skewing results.
 - **Mean**: Average performance across all iterations
 - **Median**: Middle value (robust to outliers)
 - **Std Dev**: Consistency of measurements (lower is better)
-- **Speedup**: Ratio of librosa time / rsona time
+- **Speedup**: Ratio of baseline time / rsona time
 
 ## Requirements
 
@@ -153,7 +153,7 @@ pip install -r requirements.txt
 ```
 
 Required packages:
-- librosa >= 0.10.0
+- Reference implementation (Python)
 - numpy >= 1.20.0
 - serde_json (for parsing rsona output)
 
@@ -225,10 +225,10 @@ bench/
 
 ## Troubleshooting
 
-### "librosa not found"
+### "Reference implementation not found"
 
 ```bash
-pip install librosa numpy
+pip install -r requirements.txt
 # or
 pip install -r requirements.txt
 ```
@@ -296,7 +296,7 @@ When adding new benchmarks:
 ## Related Documentation
 
 - [Performance Guide](../PERFORMANCE.md) - Optimization techniques
-- [Feature Parity](../PARITY.md) - Feature comparison with librosa
+- [Feature Parity](../PARITY.md) - Feature comparison and validation
 - [FAQ](../FAQ.md) - Common questions about performance
 
 ## License

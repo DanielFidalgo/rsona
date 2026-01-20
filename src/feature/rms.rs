@@ -4,26 +4,8 @@ use crate::signal::Frames;
 use crate::spectrum::Spectrogram;
 use rayon::prelude::*;
 
-/// RMS energy result.
-#[derive(Debug, Clone)]
-pub struct Rms {
-    n_frames: usize,
-    values: Vec<f32>,
-}
-
-impl Rms {
-    /// Frame count.
-    #[inline]
-    pub fn n_frames(&self) -> usize {
-        self.n_frames
-    }
-
-    /// RMS energy values.
-    #[inline]
-    pub fn values(&self) -> &[f32] {
-        &self.values
-    }
-}
+// Use macro to generate time-series feature struct
+time_series_feature!(Rms);
 
 /// Compute root-mean-square (RMS) energy for each frame from time-domain signal.
 ///
@@ -32,7 +14,7 @@ impl Rms {
 /// RMS = sqrt(mean(x^2)) = sqrt((1/N) * sum(x_i^2))
 /// ```
 ///
-/// This matches `librosa.feature.rms(y=...)` behavior.
+/// Computes RMS from time-domain audio samples.
 ///
 /// # Arguments
 /// * `frames` - Time-domain audio frames
@@ -77,7 +59,7 @@ pub fn rms(frames: &Frames) -> Rms {
             .collect()
     };
 
-    Rms { n_frames, values }
+    Rms::new(values)
 }
 
 /// Compute root-mean-square (RMS) energy for each frame from a spectrogram.
@@ -87,7 +69,7 @@ pub fn rms(frames: &Frames) -> Rms {
 /// RMS = sqrt((1/N) * sum(|S(f)|^2))
 /// ```
 ///
-/// This matches `librosa.feature.rms(S=...)` behavior.
+/// Computes RMS from an existing spectrogram.
 ///
 /// # Arguments
 /// * `spec` - Magnitude spectrogram (STFT or other)
@@ -120,7 +102,7 @@ pub fn rms_from_spectrogram(spec: &Spectrogram) -> Rms {
             .collect()
     };
 
-    Rms { n_frames, values }
+    Rms::new(values)
 }
 
 /// Helper function to compute RMS from a single spectrogram frame.

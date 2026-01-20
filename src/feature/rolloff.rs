@@ -1,27 +1,10 @@
 //! Spectral rolloff.
 
 use crate::spectrum::Spectrogram;
+use crate::utils::parallel::auto_map;
 
-/// Spectral rolloff result.
-#[derive(Debug, Clone)]
-pub struct SpectralRolloff {
-    n_frames: usize,
-    values: Vec<f32>,
-}
-
-impl SpectralRolloff {
-    /// Frame count.
-    #[inline]
-    pub fn n_frames(&self) -> usize {
-        self.n_frames
-    }
-
-    /// Spectral rolloff values.
-    #[inline]
-    pub fn values(&self) -> &[f32] {
-        &self.values
-    }
-}
+// Use macro to generate time-series feature struct
+time_series_feature!(SpectralRolloff);
 
 /// Compute spectral rolloff (Hz) for each frame.
 ///
@@ -35,9 +18,7 @@ pub fn spectral_rolloff(spec: &Spectrogram, roll_percent: f32) -> SpectralRollof
     let n_frames = spec.n_frames();
     let n_bins = spec.n_bins();
 
-    let mut values = Vec::with_capacity(n_frames);
-
-    for t in 0..n_frames {
+    let values = auto_map(n_frames, |t| {
         let frame = spec.frame(t).expect("frame index out of bounds");
 
         let total_energy: f32 = frame.iter().map(|c| c.norm()).sum();
@@ -54,8 +35,8 @@ pub fn spectral_rolloff(spec: &Spectrogram, roll_percent: f32) -> SpectralRollof
             }
         }
 
-        values.push(roll_freq);
-    }
+        roll_freq
+    });
 
-    SpectralRolloff { n_frames, values }
+    SpectralRolloff::new(values)
 }

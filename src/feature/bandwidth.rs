@@ -1,27 +1,10 @@
 //! Spectral bandwidth.
 
 use crate::spectrum::Spectrogram;
+use crate::utils::parallel::auto_map;
 
-/// Spectral bandwidth result.
-#[derive(Debug, Clone)]
-pub struct SpectralBandwidth {
-    n_frames: usize,
-    values: Vec<f32>,
-}
-
-impl SpectralBandwidth {
-    /// Frame count.
-    #[inline]
-    pub fn n_frames(&self) -> usize {
-        self.n_frames
-    }
-
-    ///
-    #[inline]
-    pub fn values(&self) -> &[f32] {
-        &self.values
-    }
-}
+// Use macro to generate time-series feature struct
+time_series_feature!(SpectralBandwidth);
 
 /// Compute spectral bandwidth (Hz) for each frame.
 ///
@@ -30,9 +13,7 @@ pub fn spectral_bandwidth(spec: &Spectrogram) -> SpectralBandwidth {
     let n_frames = spec.n_frames();
     let n_bins = spec.n_bins();
 
-    let mut values = Vec::with_capacity(n_frames);
-
-    for t in 0..n_frames {
+    let values = auto_map(n_frames, |t| {
         let frame = spec.frame(t).expect("frame index out of bounds");
 
         // First pass: centroid
@@ -58,9 +39,8 @@ pub fn spectral_bandwidth(spec: &Spectrogram) -> SpectralBandwidth {
             var += diff * diff * power;
         }
 
-        let bw = if den > 0.0 { (var / den).sqrt() } else { 0.0 };
-        values.push(bw);
-    }
+        if den > 0.0 { (var / den).sqrt() } else { 0.0 }
+    });
 
-    SpectralBandwidth { n_frames, values }
+    SpectralBandwidth::new(values)
 }

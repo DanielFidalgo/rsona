@@ -1,6 +1,6 @@
 //! Beat-synchronized loopfinder using chroma features.
 //!
-//! This implementation matches the librosa_loopfinder approach:
+//! Implementation approach:
 //! - Extract beat-synchronized chroma features
 //! - Search for best loop at beat level (not frame level)
 //! - Use distance/similarity metrics on beat-level features

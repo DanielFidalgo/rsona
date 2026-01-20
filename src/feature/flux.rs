@@ -1,30 +1,11 @@
 //! Spectral flux and onset strength.
+//! Spectral flux.
 
 use crate::spectrum::Spectrogram;
+use rayon::prelude::*;
 
-/// Spectral flux result.
-///
-/// One scalar value per frame.
-/// The first frame is always 0.0 (no previous frame).
-#[derive(Debug, Clone)]
-pub struct SpectralFlux {
-    n_frames: usize,
-    values: Vec<f32>,
-}
-
-impl SpectralFlux {
-    /// Frame count.
-    #[inline]
-    pub fn n_frames(&self) -> usize {
-        self.n_frames
-    }
-
-    /// Values.
-    #[inline]
-    pub fn values(&self) -> &[f32] {
-        &self.values
-    }
-}
+// Use macro to generate time-series feature struct
+time_series_feature!(SpectralFlux);
 
 /// Compute spectral flux from a complex STFT spectrogram.
 ///
@@ -46,32 +27,66 @@ pub fn spectral_flux(spec: &Spectrogram) -> SpectralFlux {
         return SpectralFlux { n_frames, values };
     }
 
-    // Precompute power spectrum for frame 0
-    let mut prev_power = vec![0.0f32; n_bins];
-    {
-        let frame0 = spec.frame(0).expect("frame index out of bounds");
-        for b in 0..n_bins {
-            prev_power[b] = frame0[b].norm_sqr();
-        }
-    }
+    // Precompute ALL power spectra in parallel for better performance
+    let all_power: Vec<Vec<f32>> = if n_frames > 10 {
+        (0..n_frames)
+            .into_par_iter()
+            .map(|t| {
+                let frame = spec.frame(t).expect("frame index out of bounds");
+                let mut power = vec![0.0f32; n_bins];
+                for b in 0..n_bins {
+                    power[b] = frame[b].norm_sqr();
+                }
+                power
+            })
+            .collect()
+    } else {
+        (0..n_frames)
+            .map(|t| {
+                let frame = spec.frame(t).expect("frame index out of bounds");
+                let mut power = vec![0.0f32; n_bins];
+                for b in 0..n_bins {
+                    power[b] = frame[b].norm_sqr();
+                }
+                power
+            })
+            .collect()
+    };
 
-    // Iterate from frame 1 onward
-    for t in 1..n_frames {
-        let frame = spec.frame(t).expect("frame index out of bounds");
+    // Compute flux differences in parallel
+    if n_frames > 10 {
+        values[1..]
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(idx, flux_val)| {
+                let t = idx + 1;
+                let curr_power = &all_power[t];
+                let prev_power = &all_power[t - 1];
 
-        let mut flux = 0.0f32;
+                let mut flux = 0.0f32;
+                for b in 0..n_bins {
+                    let diff = curr_power[b] - prev_power[b];
+                    if diff > 0.0 {
+                        flux += diff;
+                    }
+                }
+                *flux_val = flux;
+            });
+    } else {
+        for t in 1..n_frames {
+            let curr_power = &all_power[t];
+            let prev_power = &all_power[t - 1];
 
-        for b in 0..n_bins {
-            let power = frame[b].norm_sqr();
-            let diff = power - prev_power[b];
-            if diff > 0.0 {
-                flux += diff;
+            let mut flux = 0.0f32;
+            for b in 0..n_bins {
+                let diff = curr_power[b] - prev_power[b];
+                if diff > 0.0 {
+                    flux += diff;
+                }
             }
-            prev_power[b] = power;
+            values[t] = flux;
         }
-
-        values[t] = flux;
     }
 
-    SpectralFlux { n_frames, values }
+    SpectralFlux::new(values)
 }

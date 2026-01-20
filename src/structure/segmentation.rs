@@ -109,7 +109,7 @@ pub struct SegmentationConfig {
     pub repetition_similarity_threshold: f32,
 
     /// If true, use exhaustive search to find best matching loop pair.
-    /// This is slower but matches librosa_loopfinder's behavior.
+    /// This is slower but more thorough.
     pub use_exhaustive_search: bool,
 }
 
@@ -190,7 +190,7 @@ fn segment_intro_loop_outro_impl(
     // 2) Find loop boundaries
     let (mut loop_start, detected_loop_end, num_repeats, original_phase_start, phase_confidence) =
         if cfg.use_exhaustive_search {
-            // Use exhaustive search to find best matching pair (like librosa_loopfinder)
+            // Use exhaustive search to find best matching pair
             let (start, end, repeats) = find_best_matching_loop_pair(ssm, lag, cfg.min_loop_frames);
             // For exhaustive search, confidence is based on lag estimation only
             (start, end, repeats, start, lag_est.confidence)
@@ -443,7 +443,7 @@ fn find_repetition_end(
     (current_end, num_repeats)
 }
 
-/// Find best matching loop pair by exhaustive search (similar to librosa_loopfinder).
+/// Find best matching loop pair by exhaustive search.
 ///
 /// This searches for the pair of segments [start..start+lag] and [start+lag..start+2*lag]
 /// that have the highest similarity, ensuring a reasonable outro remains.

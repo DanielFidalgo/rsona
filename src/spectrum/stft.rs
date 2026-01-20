@@ -42,7 +42,7 @@ pub struct StftConfig {
 }
 
 impl StftConfig {
-    /// librosa-like default: `n_fft = frame_size`.
+    /// Standard default: `n_fft = frame_size`.
     pub fn with_frame_size(frame_size: usize) -> Self {
         Self { n_fft: frame_size }
     }
@@ -335,7 +335,7 @@ mod tests {
             window: Window::Rectangular,
             padding: Padding::None,
             channel_mode: ChannelMode::Channel(0),
-            center: true,
+            center: false,
         };
 
         let frames = frame(&audio, cfg).unwrap();
