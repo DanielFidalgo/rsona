@@ -6,7 +6,5 @@
 mod frame;
 mod window;
 
-pub use frame::{
-    frame, ChannelMode, FrameConfig, Frames, Padding, SignalError,
-};
+pub use frame::{ChannelMode, FrameConfig, Frames, Padding, SignalError, frame};
 pub use window::{Window, WindowSpec};

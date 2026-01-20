@@ -238,41 +238,41 @@ fn segment_intro_loop_outro_impl(
     let mut beat_frames_out: Option<Vec<usize>> = None;
     let mut tempo_bpm_out: Option<f32> = None;
 
-    if cfg.snap_to_beats {
-        if let Some(env) = onset_env {
-            let tempo = estimate_tempo(
-                env,
-                frames.sample_rate(),
-                frames.hop_size(),
-                cfg.tempo.clone(),
-            );
-            let beats = track_beats(
-                env,
-                frames.sample_rate(),
-                frames.hop_size(),
-                tempo.period_frames,
-                cfg.beats.clone(),
-            );
+    if cfg.snap_to_beats
+        && let Some(env) = onset_env
+    {
+        let tempo = estimate_tempo(
+            env,
+            frames.sample_rate(),
+            frames.hop_size(),
+            cfg.tempo.clone(),
+        );
+        let beats = track_beats(
+            env,
+            frames.sample_rate(),
+            frames.hop_size(),
+            tempo.period_frames,
+            cfg.beats.clone(),
+        );
 
-            tempo_bpm_out = Some(tempo.bpm);
-            beat_frames_out = Some(beats.beat_frames.clone());
+        tempo_bpm_out = Some(tempo.bpm);
+        beat_frames_out = Some(beats.beat_frames.clone());
 
-            if !beats.beat_frames.is_empty() {
-                if let Some(s) =
-                    snap_to_nearest(&beats.beat_frames, loop_start, cfg.beat_snap_radius_frames)
-                {
-                    loop_start = s;
-                }
-                if let Some(e) =
-                    snap_to_nearest(&beats.beat_frames, loop_end, cfg.beat_snap_radius_frames)
-                {
-                    loop_end = e;
-                }
+        if !beats.beat_frames.is_empty() {
+            if let Some(s) =
+                snap_to_nearest(&beats.beat_frames, loop_start, cfg.beat_snap_radius_frames)
+            {
+                loop_start = s;
+            }
+            if let Some(e) =
+                snap_to_nearest(&beats.beat_frames, loop_end, cfg.beat_snap_radius_frames)
+            {
+                loop_end = e;
+            }
 
-                if loop_end <= loop_start + 1 {
-                    loop_start = original_phase_start;
-                    loop_end = original_loop_end;
-                }
+            if loop_end <= loop_start + 1 {
+                loop_start = original_phase_start;
+                loop_end = original_loop_end;
             }
         }
     }
@@ -594,7 +594,7 @@ fn make_segment(
 fn snap_to_nearest(points: &[usize], x: usize, radius: usize) -> Option<usize> {
     let mut best: Option<(usize, usize)> = None; // (dist, val)
     for &p in points {
-        let dist = if p > x { p - x } else { x - p };
+        let dist = p.abs_diff(x);
         if dist <= radius {
             match best {
                 None => best = Some((dist, p)),

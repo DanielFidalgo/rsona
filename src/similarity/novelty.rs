@@ -108,7 +108,7 @@ pub fn novelty_curve(ssm: &SelfSimilarity, cfg: NoveltyConfig) -> NoveltyCurve {
             for (cc, c) in (c0..c1).enumerate() {
                 // band gate if needed
                 if let Some(band) = cfg.band {
-                    let dist = if r > c { r - c } else { c - r };
+                    let dist = r.abs_diff(c);
                     if dist > band {
                         continue;
                     }
@@ -134,10 +134,10 @@ pub fn novelty_curve(ssm: &SelfSimilarity, cfg: NoveltyConfig) -> NoveltyCurve {
         out[k] = acc.abs();
     }
 
-    if let Some(win) = cfg.smooth {
-        if win > 1 {
-            out = moving_average(&out, win);
-        }
+    if let Some(win) = cfg.smooth
+        && win > 1
+    {
+        out = moving_average(&out, win);
     }
 
     NoveltyCurve {

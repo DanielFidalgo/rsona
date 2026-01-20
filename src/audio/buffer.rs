@@ -40,7 +40,7 @@ impl Buffer {
         debug_assert!(sample_rate > 0, "sample_rate must be > 0");
         debug_assert!(channels > 0, "channels must be > 0");
         debug_assert!(
-            samples.len() % channels == 0,
+            samples.len().is_multiple_of(channels),
             "samples length must be divisible by channels"
         );
 

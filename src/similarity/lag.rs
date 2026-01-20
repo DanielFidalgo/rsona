@@ -192,10 +192,11 @@ pub fn diagonal_lag_energy(ssm: &SelfSimilarity, cfg: LagEnergyConfig) -> LagEne
         energy.push(e);
     }
 
-    if let Some(win) = cfg.smooth_lags {
-        if win > 1 && !energy.is_empty() {
-            energy = moving_average(&energy, win);
-        }
+    if let Some(win) = cfg.smooth_lags
+        && win > 1
+        && !energy.is_empty()
+    {
+        energy = moving_average(&energy, win);
     }
 
     LagEnergy {

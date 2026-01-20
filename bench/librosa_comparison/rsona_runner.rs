@@ -556,7 +556,7 @@ impl BenchmarkRunner {
 
         let mut sorted = runtimes.clone();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let median = if sorted.len() % 2 == 0 {
+        let median = if sorted.len().is_multiple_of(2) {
             (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
         } else {
             sorted[sorted.len() / 2]

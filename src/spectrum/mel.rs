@@ -10,7 +10,7 @@ use std::cell::RefCell;
 
 // Thread-local buffer to avoid repeated allocation in parallel mel computation
 thread_local! {
-    static MEL_POWER_BUFFER: RefCell<Vec<f32>> = RefCell::new(Vec::new());
+    static MEL_POWER_BUFFER: RefCell<Vec<f32>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Mel scaling convention.

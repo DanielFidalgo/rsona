@@ -111,10 +111,10 @@ pub fn repetition_curve(ssm: &SelfSimilarity, cfg: RepetitionConfig) -> Repetiti
     }
 
     // Optional smoothing
-    if let Some(win) = cfg.smooth {
-        if win > 1 {
-            values = moving_average(&values, win);
-        }
+    if let Some(win) = cfg.smooth
+        && win > 1
+    {
+        values = moving_average(&values, win);
     }
 
     RepetitionCurve {

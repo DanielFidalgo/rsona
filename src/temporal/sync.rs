@@ -6,9 +6,10 @@
 use ndarray::{Array2, ArrayView2};
 
 /// Aggregation method for beat synchronization.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AggregationMethod {
     /// Mean of all frames in the beat interval.
+    #[default]
     Mean,
     /// Median of all frames in the beat interval.
     Median,
@@ -18,12 +19,6 @@ pub enum AggregationMethod {
     First,
     /// Last frame in the beat interval.
     Last,
-}
-
-impl Default for AggregationMethod {
-    fn default() -> Self {
-        Self::Mean
-    }
 }
 
 /// Configuration for beat synchronization.
@@ -240,7 +235,7 @@ fn median(values: &mut [f32]) -> f32 {
     values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let mid = values.len() / 2;
 
-    if values.len() % 2 == 0 {
+    if values.len().is_multiple_of(2) {
         (values[mid - 1] + values[mid]) / 2.0
     } else {
         values[mid]

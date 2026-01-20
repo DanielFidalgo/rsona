@@ -147,11 +147,7 @@ pub fn peak_pick(curve: &[f32], cfg: PeakPickingConfig) -> Peaks {
 
     'outer: for peak in candidates {
         for sel in &selected {
-            let dist = if peak.index > sel.index {
-                peak.index - sel.index
-            } else {
-                sel.index - peak.index
-            };
+            let dist = peak.index.abs_diff(sel.index);
             if dist < cfg.min_distance {
                 continue 'outer;
             }

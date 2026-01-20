@@ -16,7 +16,7 @@ use std::cell::RefCell;
 
 // Thread-local cache for DCT computation
 thread_local! {
-    static MFCC_BUFFERS: RefCell<(Vec<f32>, Vec<f32>)> = RefCell::new((Vec::new(), Vec::new()));
+    static MFCC_BUFFERS: RefCell<(Vec<f32>, Vec<f32>)> = const { RefCell::new((Vec::new(), Vec::new())) };
     static DCT_CACHE: RefCell<DctCache> = RefCell::new(DctCache::new());
 }
 
@@ -240,7 +240,7 @@ fn dct2_fft_frame(input: &[f32], output: &mut [f32], n_mfcc: usize, norm: DctNor
         // Reorder input for efficient DCT via FFT
         // Even indices: x[0], x[2], x[4], ...
         // Odd indices (reversed): x[n-1], x[n-3], x[n-5], ...
-        let half = (n + 1) / 2;
+        let half = n.div_ceil(2);
         for i in 0..half {
             cache.fft_buffer[i] = Complex::new(input[2 * i], 0.0);
         }

@@ -81,7 +81,7 @@ pub fn rms_from_spectrogram(spec: &Spectrogram) -> Rms {
     let n_bins = spec.n_bins();
     let n_fft = spec.n_fft();
     let norm_factor = 2.0 / (n_fft * n_fft) as f32;
-    let is_even_fft = n_fft % 2 == 0;
+    let is_even_fft = n_fft.is_multiple_of(2);
 
     // Parallelize for large frame counts
     let values = if n_frames > 10 {

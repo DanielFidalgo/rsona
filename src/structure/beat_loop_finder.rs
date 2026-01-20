@@ -296,10 +296,10 @@ fn find_valid_beat_pairs(
                 continue;
             }
 
-            if let Some(max_len) = cfg.max_length_samples {
-                if length > max_len {
-                    continue;
-                }
+            if let Some(max_len) = cfg.max_length_samples
+                && length > max_len
+            {
+                continue;
             }
 
             // Compute distance

@@ -274,7 +274,7 @@ pub fn frame(audio: &Buffer, config: FrameConfig) -> Result<Frames, SignalError>
     if audio.channels == 0 {
         return Err(SignalError::InvalidConfig("audio.channels must be > 0"));
     }
-    if audio.samples.len() % audio.channels != 0 {
+    if !audio.samples.len().is_multiple_of(audio.channels) {
         return Err(SignalError::InvalidConfig(
             "audio.samples length must be divisible by audio.channels",
         ));
