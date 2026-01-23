@@ -3,6 +3,7 @@
 //! Uses a checkerboard kernel along the diagonal to detect section boundaries.
 
 use super::SelfSimilarity;
+use rayon::prelude::*;
 
 /// Kernel window size (half-width in frames).
 ///
@@ -91,48 +92,97 @@ pub fn novelty_curve(ssm: &SelfSimilarity, cfg: NoveltyConfig) -> NoveltyCurve {
     let weights = build_weights(size, w, cfg.gaussian, cfg.gaussian_sigma_frac);
     let signs = build_checkerboard_signs(size, w);
 
-    let mut out = vec![0.0f32; n];
+    // Parallelize novelty computation for better performance on large matrices
+    let mut out: Vec<f32> = if n > 100 {
+        // Parallel path for large matrices
+        (0..n)
+            .into_par_iter()
+            .map(|k| {
+                // kernel block spans rows [k-w, k+w) and cols [k-w, k+w)
+                let r0 = k.saturating_sub(w);
+                let c0 = k.saturating_sub(w);
+                let r1 = (k + w).min(n);
+                let c1 = (k + w).min(n);
 
-    // For each diagonal position k, apply kernel to local block around (k,k).
-    for k in 0..n {
-        // kernel block spans rows [k-w, k+w) and cols [k-w, k+w)
-        let r0 = k.saturating_sub(w);
-        let c0 = k.saturating_sub(w);
-        let r1 = (k + w).min(n);
-        let c1 = (k + w).min(n);
+                let mut acc = 0.0f32;
+                let mut energy = 0.0f32;
 
-        let mut acc = 0.0f32;
-        let mut energy = 0.0f32;
+                for (rr, r) in (r0..r1).enumerate() {
+                    for (cc, c) in (c0..c1).enumerate() {
+                        // band gate if needed
+                        if let Some(band) = cfg.band {
+                            let dist = r.abs_diff(c);
+                            if dist > band {
+                                continue;
+                            }
+                        }
 
-        for (rr, r) in (r0..r1).enumerate() {
-            for (cc, c) in (c0..c1).enumerate() {
-                // band gate if needed
-                if let Some(band) = cfg.band {
-                    let dist = r.abs_diff(c);
-                    if dist > band {
-                        continue;
+                        let s = ssm.value(r, c);
+                        let wgt = weights[rr * size + cc];
+                        let sgn = signs[rr * size + cc];
+
+                        acc += s * wgt * sgn;
+                        if cfg.normalize {
+                            energy += wgt * wgt;
+                        }
                     }
                 }
 
-                let s = ssm.value(r, c);
-                let wgt = weights[rr * size + cc];
-                let sgn = signs[rr * size + cc];
+                if cfg.normalize && energy > 1e-12 {
+                    acc /= energy.sqrt();
+                }
 
-                acc += s * wgt * sgn;
-                if cfg.normalize {
-                    energy += wgt * wgt;
+                // Novelty should be non-negative for boundary strength;
+                // taking abs is standard because sign depends on direction.
+                acc.abs()
+            })
+            .collect()
+    } else {
+        // Sequential path for small matrices to avoid parallelization overhead
+        let mut out = vec![0.0f32; n];
+
+        for k in 0..n {
+            // kernel block spans rows [k-w, k+w) and cols [k-w, k+w)
+            let r0 = k.saturating_sub(w);
+            let c0 = k.saturating_sub(w);
+            let r1 = (k + w).min(n);
+            let c1 = (k + w).min(n);
+
+            let mut acc = 0.0f32;
+            let mut energy = 0.0f32;
+
+            for (rr, r) in (r0..r1).enumerate() {
+                for (cc, c) in (c0..c1).enumerate() {
+                    // band gate if needed
+                    if let Some(band) = cfg.band {
+                        let dist = r.abs_diff(c);
+                        if dist > band {
+                            continue;
+                        }
+                    }
+
+                    let s = ssm.value(r, c);
+                    let wgt = weights[rr * size + cc];
+                    let sgn = signs[rr * size + cc];
+
+                    acc += s * wgt * sgn;
+                    if cfg.normalize {
+                        energy += wgt * wgt;
+                    }
                 }
             }
+
+            if cfg.normalize && energy > 1e-12 {
+                acc /= energy.sqrt();
+            }
+
+            // Novelty should be non-negative for boundary strength;
+            // taking abs is standard because sign depends on direction.
+            out[k] = acc.abs();
         }
 
-        if cfg.normalize && energy > 1e-12 {
-            acc /= energy.sqrt();
-        }
-
-        // Novelty should be non-negative for boundary strength;
-        // taking abs is standard because sign depends on direction.
-        out[k] = acc.abs();
-    }
+        out
+    };
 
     if let Some(win) = cfg.smooth
         && win > 1
@@ -193,17 +243,30 @@ fn moving_average(x: &[f32], win: usize) -> Vec<f32> {
         return x.to_vec();
     }
     let half = win / 2;
-    let mut out = vec![0.0f32; n];
 
-    for i in 0..n {
-        let start = i.saturating_sub(half);
-        let end = (i + half + 1).min(n);
+    // Parallelize for large arrays
+    if n > 1000 {
+        (0..n)
+            .into_par_iter()
+            .map(|i| {
+                let start = i.saturating_sub(half);
+                let end = (i + half + 1).min(n);
 
-        let mut sum = 0.0f32;
-        for v in &x[start..end] {
-            sum += *v;
+                let sum: f32 = x[start..end].iter().sum();
+                sum / (end - start) as f32
+            })
+            .collect()
+    } else {
+        // Sequential path for small arrays
+        let mut out = vec![0.0f32; n];
+
+        for i in 0..n {
+            let start = i.saturating_sub(half);
+            let end = (i + half + 1).min(n);
+
+            let sum: f32 = x[start..end].iter().sum();
+            out[i] = sum / (end - start) as f32;
         }
-        out[i] = sum / (end - start) as f32;
+        out
     }
-    out
 }

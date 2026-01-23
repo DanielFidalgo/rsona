@@ -363,19 +363,37 @@ fn apply_chroma_filters(
     x: &[rustfft::num_complex::Complex<f32>],
     out: &mut [f32],
 ) {
-    // Zero output
-    for val in out.iter_mut() {
-        *val = 0.0;
-    }
+    let n_chroma = bank.filters.len();
 
-    // For each chroma class, sum weighted magnitudes
-    for (chroma_idx, filter) in bank.filters.iter().enumerate() {
-        let mut sum = 0.0f32;
-        for &(bin_idx, weight) in filter {
-            let magnitude = x[bin_idx].norm();
-            sum += magnitude * weight;
+    // Parallelize for typical chroma counts (usually 12)
+    // Each chroma bin computation is independent
+    if n_chroma >= 12 {
+        out.par_iter_mut()
+            .zip(bank.filters.par_iter())
+            .for_each(|(out_val, filter)| {
+                let mut sum = 0.0f32;
+                for &(bin_idx, weight) in filter {
+                    let magnitude = x[bin_idx].norm();
+                    sum += magnitude * weight;
+                }
+                *out_val = sum;
+            });
+    } else {
+        // Sequential path for small chroma counts
+        // Zero output
+        for val in out.iter_mut() {
+            *val = 0.0;
         }
-        out[chroma_idx] = sum;
+
+        // For each chroma class, sum weighted magnitudes
+        for (chroma_idx, filter) in bank.filters.iter().enumerate() {
+            let mut sum = 0.0f32;
+            for &(bin_idx, weight) in filter {
+                let magnitude = x[bin_idx].norm();
+                sum += magnitude * weight;
+            }
+            out[chroma_idx] = sum;
+        }
     }
 }
 

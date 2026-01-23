@@ -4,6 +4,7 @@
 //! at beat boundaries, enabling beat-synchronized analysis.
 
 use ndarray::{Array2, ArrayView2};
+use rayon::prelude::*;
 
 /// Aggregation method for beat synchronization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -63,38 +64,90 @@ pub fn sync_to_beats(
     let n_beats = beat_frames.len();
     let mut output = Array2::zeros((n_beats, n_features));
 
-    for (beat_idx, &beat_frame) in beat_frames.iter().enumerate() {
-        // Determine the frame range for this beat
-        let start_frame = if beat_idx == 0 {
-            0
-        } else {
-            // Midpoint between previous and current beat
-            (beat_frames[beat_idx - 1] + beat_frame) / 2
-        };
+    // Parallelize for large beat counts
+    if n_beats > 50 {
+        let rows: Vec<Vec<f32>> = (0..n_beats)
+            .into_par_iter()
+            .map(|beat_idx| {
+                let beat_frame = beat_frames[beat_idx];
 
-        let end_frame = if beat_idx + 1 < n_beats {
-            // Midpoint between current and next beat
-            (beat_frame + beat_frames[beat_idx + 1]) / 2
-        } else if cfg.pad_end {
-            // Include all remaining frames
-            n_frames
-        } else {
-            // Only up to current beat
-            beat_frame + 1
-        };
+                // Determine the frame range for this beat
+                let start_frame = if beat_idx == 0 {
+                    0
+                } else {
+                    // Midpoint between previous and current beat
+                    (beat_frames[beat_idx - 1] + beat_frame) / 2
+                };
 
-        // Clamp to valid range
-        let start = start_frame.min(n_frames);
-        let end = end_frame.min(n_frames).max(start);
+                let end_frame = if beat_idx + 1 < n_beats {
+                    // Midpoint between current and next beat
+                    (beat_frame + beat_frames[beat_idx + 1]) / 2
+                } else if cfg.pad_end {
+                    // Include all remaining frames
+                    n_frames
+                } else {
+                    // Only up to current beat
+                    beat_frame + 1
+                };
 
-        if start >= end {
-            continue;
+                // Clamp to valid range
+                let start = start_frame.min(n_frames);
+                let end = end_frame.min(n_frames).max(start);
+
+                if start >= end {
+                    return vec![0.0; n_features];
+                }
+
+                // Aggregate features in this range
+                (0..n_features)
+                    .map(|feat_idx| {
+                        aggregate_feature(features.slice(s![start..end, feat_idx]), cfg.method)
+                    })
+                    .collect()
+            })
+            .collect();
+
+        // Copy results into output array
+        for (beat_idx, row) in rows.iter().enumerate() {
+            for (feat_idx, &value) in row.iter().enumerate() {
+                output[[beat_idx, feat_idx]] = value;
+            }
         }
+    } else {
+        // Sequential path for small beat counts
+        for (beat_idx, &beat_frame) in beat_frames.iter().enumerate() {
+            // Determine the frame range for this beat
+            let start_frame = if beat_idx == 0 {
+                0
+            } else {
+                // Midpoint between previous and current beat
+                (beat_frames[beat_idx - 1] + beat_frame) / 2
+            };
 
-        // Aggregate features in this range
-        for feat_idx in 0..n_features {
-            let value = aggregate_feature(features.slice(s![start..end, feat_idx]), cfg.method);
-            output[[beat_idx, feat_idx]] = value;
+            let end_frame = if beat_idx + 1 < n_beats {
+                // Midpoint between current and next beat
+                (beat_frame + beat_frames[beat_idx + 1]) / 2
+            } else if cfg.pad_end {
+                // Include all remaining frames
+                n_frames
+            } else {
+                // Only up to current beat
+                beat_frame + 1
+            };
+
+            // Clamp to valid range
+            let start = start_frame.min(n_frames);
+            let end = end_frame.min(n_frames).max(start);
+
+            if start >= end {
+                continue;
+            }
+
+            // Aggregate features in this range
+            for feat_idx in 0..n_features {
+                let value = aggregate_feature(features.slice(s![start..end, feat_idx]), cfg.method);
+                output[[beat_idx, feat_idx]] = value;
+            }
         }
     }
 
@@ -118,53 +171,104 @@ pub fn sync_series_to_beats(series: &[f32], beat_frames: &[usize], cfg: SyncConf
     }
 
     let n_beats = beat_frames.len();
-    let mut output = Vec::with_capacity(n_beats);
 
-    for (beat_idx, &beat_frame) in beat_frames.iter().enumerate() {
-        // Determine the frame range for this beat
-        let start_frame = if beat_idx == 0 {
-            0
-        } else {
-            (beat_frames[beat_idx - 1] + beat_frame) / 2
-        };
+    // Parallelize for large beat counts
+    if n_beats > 50 {
+        (0..n_beats)
+            .into_par_iter()
+            .map(|beat_idx| {
+                let beat_frame = beat_frames[beat_idx];
 
-        let end_frame = if beat_idx + 1 < n_beats {
-            (beat_frame + beat_frames[beat_idx + 1]) / 2
-        } else if cfg.pad_end {
-            n_frames
-        } else {
-            beat_frame + 1
-        };
+                // Determine the frame range for this beat
+                let start_frame = if beat_idx == 0 {
+                    0
+                } else {
+                    (beat_frames[beat_idx - 1] + beat_frame) / 2
+                };
 
-        let start = start_frame.min(n_frames);
-        let end = end_frame.min(n_frames).max(start);
+                let end_frame = if beat_idx + 1 < n_beats {
+                    (beat_frame + beat_frames[beat_idx + 1]) / 2
+                } else if cfg.pad_end {
+                    n_frames
+                } else {
+                    beat_frame + 1
+                };
 
-        if start >= end {
-            output.push(0.0);
-            continue;
+                let start = start_frame.min(n_frames);
+                let end = end_frame.min(n_frames).max(start);
+
+                if start >= end {
+                    return 0.0;
+                }
+
+                match cfg.method {
+                    AggregationMethod::Mean => {
+                        let sum: f32 = series[start..end].iter().sum();
+                        sum / (end - start) as f32
+                    }
+                    AggregationMethod::Median => {
+                        let mut segment: Vec<f32> = series[start..end].to_vec();
+                        median(&mut segment)
+                    }
+                    AggregationMethod::Max => series[start..end]
+                        .iter()
+                        .cloned()
+                        .fold(f32::NEG_INFINITY, f32::max),
+                    AggregationMethod::First => series[start],
+                    AggregationMethod::Last => series[end - 1],
+                }
+            })
+            .collect()
+    } else {
+        // Sequential path for small beat counts
+        let mut output = Vec::with_capacity(n_beats);
+
+        for (beat_idx, &beat_frame) in beat_frames.iter().enumerate() {
+            // Determine the frame range for this beat
+            let start_frame = if beat_idx == 0 {
+                0
+            } else {
+                (beat_frames[beat_idx - 1] + beat_frame) / 2
+            };
+
+            let end_frame = if beat_idx + 1 < n_beats {
+                (beat_frame + beat_frames[beat_idx + 1]) / 2
+            } else if cfg.pad_end {
+                n_frames
+            } else {
+                beat_frame + 1
+            };
+
+            let start = start_frame.min(n_frames);
+            let end = end_frame.min(n_frames).max(start);
+
+            if start >= end {
+                output.push(0.0);
+                continue;
+            }
+
+            let value = match cfg.method {
+                AggregationMethod::Mean => {
+                    let sum: f32 = series[start..end].iter().sum();
+                    sum / (end - start) as f32
+                }
+                AggregationMethod::Median => {
+                    let mut segment: Vec<f32> = series[start..end].to_vec();
+                    median(&mut segment)
+                }
+                AggregationMethod::Max => series[start..end]
+                    .iter()
+                    .cloned()
+                    .fold(f32::NEG_INFINITY, f32::max),
+                AggregationMethod::First => series[start],
+                AggregationMethod::Last => series[end - 1],
+            };
+
+            output.push(value);
         }
 
-        let value = match cfg.method {
-            AggregationMethod::Mean => {
-                let sum: f32 = series[start..end].iter().sum();
-                sum / (end - start) as f32
-            }
-            AggregationMethod::Median => {
-                let mut segment: Vec<f32> = series[start..end].to_vec();
-                median(&mut segment)
-            }
-            AggregationMethod::Max => series[start..end]
-                .iter()
-                .cloned()
-                .fold(f32::NEG_INFINITY, f32::max),
-            AggregationMethod::First => series[start],
-            AggregationMethod::Last => series[end - 1],
-        };
-
-        output.push(value);
+        output
     }
-
-    output
 }
 
 /// Synchronize features using explicit beat boundaries.
@@ -188,17 +292,46 @@ pub fn sync_to_intervals(
 
     let mut output = Array2::zeros((n_beats, n_features));
 
-    for (beat_idx, &(start, end)) in beat_intervals.iter().enumerate() {
-        let start = start.min(n_frames);
-        let end = end.min(n_frames).max(start);
+    // Parallelize for large beat counts
+    if n_beats > 50 {
+        let rows: Vec<Vec<f32>> = beat_intervals
+            .par_iter()
+            .map(|&(start, end)| {
+                let start = start.min(n_frames);
+                let end = end.min(n_frames).max(start);
 
-        if start >= end {
-            continue;
+                if start >= end {
+                    return vec![0.0; n_features];
+                }
+
+                (0..n_features)
+                    .map(|feat_idx| {
+                        aggregate_feature(features.slice(s![start..end, feat_idx]), method)
+                    })
+                    .collect()
+            })
+            .collect();
+
+        // Copy results into output array
+        for (beat_idx, row) in rows.iter().enumerate() {
+            for (feat_idx, &value) in row.iter().enumerate() {
+                output[[beat_idx, feat_idx]] = value;
+            }
         }
+    } else {
+        // Sequential path for small beat counts
+        for (beat_idx, &(start, end)) in beat_intervals.iter().enumerate() {
+            let start = start.min(n_frames);
+            let end = end.min(n_frames).max(start);
 
-        for feat_idx in 0..n_features {
-            let value = aggregate_feature(features.slice(s![start..end, feat_idx]), method);
-            output[[beat_idx, feat_idx]] = value;
+            if start >= end {
+                continue;
+            }
+
+            for feat_idx in 0..n_features {
+                let value = aggregate_feature(features.slice(s![start..end, feat_idx]), method);
+                output[[beat_idx, feat_idx]] = value;
+            }
         }
     }
 

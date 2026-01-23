@@ -13,6 +13,7 @@ use crate::{
     signal::Frames,
     temporal::BeatTrack,
 };
+use rayon::prelude::*;
 
 /// Result of beat-synchronized loop finding
 #[derive(Debug, Clone)]
@@ -37,6 +38,93 @@ pub struct BeatLoopResult {
     pub candidates: Vec<(usize, usize, f32)>,
 }
 
+/// Loop selection strategy
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Loop detection preference determining how to balance similarity matching vs. musical structure.
+///
+/// This enum controls the scoring algorithm used to select the best loop candidate:
+///
+/// # Use Cases
+///
+/// - **Game developers**: Use `Similarity` for seamless background music loops
+/// - **DJs/Producers**: Use `MusicalStructure` for musically meaningful phrase boundaries
+/// - **General use**: Use `Balanced` for a compromise between both approaches
+///
+/// # How It Works
+///
+/// - `Similarity`: Pure distance-based matching. Finds the tightest similarity match
+///   regardless of musical structure (best for seamless loops that may be shorter)
+///
+/// - `MusicalStructure`: Applies a penalty to loops that don't align with standard
+///   musical phrase lengths (8, 16, 32, 64, 128 bars in 4/4 time). Requires tempo
+///   to be provided in `BeatLoopConfig::tempo_bpm`. Prefers longer, musically
+///   coherent sections even if similarity is slightly lower.
+///
+/// - `Balanced`: Applies a moderate penalty for non-standard phrase lengths,
+///   allowing some flexibility while still preferring musical structure.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use rsona::structure::{BeatLoopConfig, LoopPreference, DistanceMetric};
+///
+/// // For game background music - tightest match
+/// let game_config = BeatLoopConfig {
+///     preference: LoopPreference::Similarity,
+///     tempo_bpm: None, // Tempo not required for Similarity mode
+///     ..Default::default()
+/// };
+///
+/// // For DJ mixing - musical phrase boundaries
+/// let dj_config = BeatLoopConfig {
+///     preference: LoopPreference::MusicalStructure,
+///     tempo_bpm: Some(128.0), // Tempo required for musical structure
+///     ..Default::default()
+/// };
+///
+/// // Balanced approach
+/// let balanced_config = BeatLoopConfig {
+///     preference: LoopPreference::Balanced,
+///     tempo_bpm: Some(120.0),
+///     ..Default::default()
+/// };
+/// ```
+pub enum LoopPreference {
+    /// Optimize for tightest similarity match (best for seamless game loops)
+    ///
+    /// This mode ignores musical structure and focuses purely on finding the
+    /// beat pair with the lowest feature distance. Results in the most seamless
+    /// loops but may not align with musical phrase boundaries.
+    ///
+    /// **Tempo not required** for this mode.
+    Similarity,
+
+    /// Optimize for musical phrase boundaries (best for DJ mixing, composition)
+    ///
+    /// This mode applies a quadratic penalty to loops that don't align with
+    /// standard musical phrase lengths (8, 16, 32, 64, 128 bars). Strongly
+    /// prefers musically coherent sections that make sense as standalone
+    /// musical units.
+    ///
+    /// **Requires tempo** to be set in `BeatLoopConfig::tempo_bpm`.
+    MusicalStructure,
+
+    /// Balance between similarity and musical structure
+    ///
+    /// This mode applies a linear penalty for non-standard phrase lengths,
+    /// providing a middle ground between tight similarity matching and
+    /// musical coherence.
+    ///
+    /// **Tempo recommended** but not strictly required.
+    Balanced,
+}
+
+impl Default for LoopPreference {
+    fn default() -> Self {
+        Self::Similarity
+    }
+}
+
 /// Configuration for beat-synchronized loop finding
 #[derive(Debug, Clone)]
 pub struct BeatLoopConfig {
@@ -50,6 +138,26 @@ pub struct BeatLoopConfig {
     pub max_candidates: usize,
     /// Distance metric to use
     pub metric: DistanceMetric,
+    /// Length preference weight (0.0 = prioritize similarity only, 0.05 = prefer longer loops)
+    ///
+    /// This parameter balances between similarity (distance) and loop length.
+    /// Score = distance - (length_preference * loop_duration_seconds)
+    ///
+    /// Recommended values:
+    /// - 0.0: Pure similarity (shortest matching loop)
+    /// - 0.02-0.05: Balanced (moderate preference for longer loops)
+    /// - 0.1+: Strong length preference (may sacrifice similarity)
+    pub length_preference: f32,
+    /// Loop selection strategy (similarity vs musical structure)
+    ///
+    /// This determines whether to prefer tight similarity matches or
+    /// musically meaningful phrase boundaries (power-of-2 bar counts).
+    pub preference: LoopPreference,
+    /// Tempo in BPM (required for musical structure mode)
+    ///
+    /// Used to calculate bar boundaries when preference is MusicalStructure.
+    /// Can be obtained from tempo estimation.
+    pub tempo_bpm: Option<f32>,
 }
 
 impl Default for BeatLoopConfig {
@@ -60,6 +168,9 @@ impl Default for BeatLoopConfig {
             feature_window_frames: 50, // ~0.6 seconds at hop=512, sr=44100
             max_candidates: 100,
             metric: DistanceMetric::Manhattan,
+            length_preference: 0.0, // Default: pure similarity, no length preference
+            preference: LoopPreference::Similarity,
+            tempo_bpm: None,
         }
     }
 }
@@ -115,8 +226,13 @@ pub fn find_loop_by_beats(
     let normalized = normalize_features(&beat_features);
 
     // 3. Find all valid loop pairs with their distances
-    let mut candidates =
-        find_valid_beat_pairs(&normalized, &beats.beat_frames, frames.hop_size(), &cfg);
+    let mut candidates = find_valid_beat_pairs(
+        &normalized,
+        &beats.beat_frames,
+        frames.hop_size(),
+        frames.sample_rate(),
+        &cfg,
+    );
 
     if candidates.is_empty() {
         return None;
@@ -237,21 +353,48 @@ fn normalize_features(features: &[Vec<f32>]) -> Vec<Vec<f32>> {
     let mut means = vec![0.0; n_dims];
     let mut stds = vec![0.0; n_dims];
 
-    // Mean
-    for beat_feats in features {
-        for (i, &val) in beat_feats.iter().enumerate() {
-            means[i] += val as f64;
+    // Mean - parallelize for large feature sets
+    if n_beats > 100 {
+        means = (0..n_dims)
+            .into_par_iter()
+            .map(|dim_idx| {
+                features
+                    .iter()
+                    .map(|feat| feat[dim_idx] as f64)
+                    .sum::<f64>()
+            })
+            .collect();
+    } else {
+        for beat_feats in features {
+            for (i, &val) in beat_feats.iter().enumerate() {
+                means[i] += val as f64;
+            }
         }
     }
     for mean in &mut means {
         *mean /= n_beats as f64;
     }
 
-    // Std
-    for beat_feats in features {
-        for (i, &val) in beat_feats.iter().enumerate() {
-            let diff = val as f64 - means[i];
-            stds[i] += diff * diff;
+    // Std - parallelize for large feature sets
+    if n_beats > 100 {
+        stds = (0..n_dims)
+            .into_par_iter()
+            .map(|dim_idx| {
+                features
+                    .iter()
+                    .map(|feat| {
+                        let diff = feat[dim_idx] as f64 - means[dim_idx];
+                        diff * diff
+                    })
+                    .sum::<f64>()
+            })
+            .collect();
+    } else {
+        for beat_feats in features {
+            for (i, &val) in beat_feats.iter().enumerate() {
+                let diff = val as f64 - means[i];
+                stds[i] += diff * diff;
+            }
         }
     }
     for std in &mut stds {
@@ -261,55 +404,196 @@ fn normalize_features(features: &[Vec<f32>]) -> Vec<Vec<f32>> {
         }
     }
 
-    // Normalize
-    let mut normalized = Vec::with_capacity(n_beats);
-    for beat_feats in features {
-        let mut norm_feats = Vec::with_capacity(n_dims);
-        for (i, &val) in beat_feats.iter().enumerate() {
-            let z = ((val as f64 - means[i]) / stds[i]) as f32;
-            norm_feats.push(z);
+    // Normalize - parallelize for large feature sets
+    if n_beats > 100 {
+        features
+            .par_iter()
+            .map(|beat_feats| {
+                beat_feats
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &val)| ((val as f64 - means[i]) / stds[i]) as f32)
+                    .collect::<Vec<f32>>()
+            })
+            .collect()
+    } else {
+        let mut normalized = Vec::with_capacity(n_beats);
+        for beat_feats in features {
+            let mut norm_feats = Vec::with_capacity(n_dims);
+            for (i, &val) in beat_feats.iter().enumerate() {
+                let z = ((val as f64 - means[i]) / stds[i]) as f32;
+                norm_feats.push(z);
+            }
+            normalized.push(norm_feats);
         }
-        normalized.push(norm_feats);
+        normalized
     }
-
-    normalized
 }
 
-/// Find all valid beat pairs and compute distances
+/// Find all valid beat pairs and compute distances with optional length weighting
 fn find_valid_beat_pairs(
     beat_features: &[Vec<f32>],
     beat_frames: &[usize],
     hop_size: usize,
+    sample_rate: u32,
     cfg: &BeatLoopConfig,
 ) -> Vec<(usize, usize, f32)> {
     let n_beats = beat_features.len();
-    let mut candidates = Vec::new();
 
-    for b1 in 0..n_beats {
-        for b2 in (b1 + 1)..n_beats {
-            // Check length constraints
-            let s1 = beat_frames[b1] * hop_size;
-            let s2 = beat_frames[b2] * hop_size;
-            let length = s2 - s1;
+    // Parallelize distance computation for large beat counts
+    if n_beats > 50 {
+        (0..n_beats)
+            .into_par_iter()
+            .flat_map(|b1| {
+                let mut local_candidates = Vec::new();
+                for b2 in (b1 + 1)..n_beats {
+                    // Check length constraints
+                    let s1 = beat_frames[b1] * hop_size;
+                    let s2 = beat_frames[b2] * hop_size;
+                    let length = s2 - s1;
 
-            if length < cfg.min_length_samples {
-                continue;
+                    if length < cfg.min_length_samples {
+                        continue;
+                    }
+
+                    if let Some(max_len) = cfg.max_length_samples
+                        && length > max_len
+                    {
+                        continue;
+                    }
+
+                    // Compute distance
+                    let distance =
+                        compute_distance(&beat_features[b1], &beat_features[b2], cfg.metric);
+
+                    // Apply length weighting and/or musical structure preference
+                    let duration_seconds = length as f32 / (sample_rate as f32 * hop_size as f32);
+
+                    let mut score = distance;
+
+                    // Apply length preference if configured
+                    if cfg.length_preference > 0.0 {
+                        score -= cfg.length_preference * duration_seconds;
+                    }
+
+                    // Apply musical structure bonus if configured
+                    if cfg.preference != LoopPreference::Similarity {
+                        let structure_adjustment = calculate_musical_structure_score(
+                            duration_seconds,
+                            cfg.tempo_bpm,
+                            cfg.preference,
+                        );
+                        score += structure_adjustment;
+                    }
+
+                    local_candidates.push((b1, b2, score));
+                }
+                local_candidates
+            })
+            .collect()
+    } else {
+        let mut candidates = Vec::new();
+
+        for b1 in 0..n_beats {
+            for b2 in (b1 + 1)..n_beats {
+                // Check length constraints
+                let s1 = beat_frames[b1] * hop_size;
+                let s2 = beat_frames[b2] * hop_size;
+                let length = s2 - s1;
+
+                if length < cfg.min_length_samples {
+                    continue;
+                }
+
+                if let Some(max_len) = cfg.max_length_samples
+                    && length > max_len
+                {
+                    continue;
+                }
+
+                // Compute distance
+                let distance = compute_distance(&beat_features[b1], &beat_features[b2], cfg.metric);
+
+                // Apply length weighting and/or musical structure preference
+                let duration_seconds = length as f32 / (sample_rate as f32 * hop_size as f32);
+
+                let mut score = distance;
+
+                // Apply length preference if configured
+                if cfg.length_preference > 0.0 {
+                    score -= cfg.length_preference * duration_seconds;
+                }
+
+                // Apply musical structure bonus if configured
+                if cfg.preference != LoopPreference::Similarity {
+                    let structure_adjustment = calculate_musical_structure_score(
+                        duration_seconds,
+                        cfg.tempo_bpm,
+                        cfg.preference,
+                    );
+                    score += structure_adjustment;
+                }
+
+                candidates.push((b1, b2, score));
             }
-
-            if let Some(max_len) = cfg.max_length_samples
-                && length > max_len
-            {
-                continue;
-            }
-
-            // Compute distance
-            let distance = compute_distance(&beat_features[b1], &beat_features[b2], cfg.metric);
-
-            candidates.push((b1, b2, distance));
         }
-    }
 
-    candidates
+        candidates
+    }
+}
+
+/// Calculate musical structure score adjustment
+///
+/// Returns a penalty (positive = worse score) or bonus (negative = better score)
+/// based on how well the loop duration aligns with musical phrase boundaries.
+///
+/// Prefers loops that are power-of-2 bar counts (16, 32, 64 bars) which are
+/// common in electronic/dance music structure.
+fn calculate_musical_structure_score(
+    duration_seconds: f32,
+    tempo_bpm: Option<f32>,
+    preference: LoopPreference,
+) -> f32 {
+    // If no tempo provided, can't calculate musical structure
+    let tempo = match tempo_bpm {
+        Some(t) if t > 0.0 => t,
+        _ => return 0.0,
+    };
+
+    // Calculate number of beats in this loop duration
+    let beats_per_second = tempo / 60.0;
+    let num_beats = duration_seconds * beats_per_second;
+
+    // Assuming 4/4 time signature (4 beats per bar)
+    let num_bars = num_beats / 4.0;
+
+    // Find nearest power-of-2 bar count that makes musical sense
+    // Common loop lengths: 8, 16, 32, 64 bars
+    let ideal_bar_counts = [8.0, 16.0, 32.0, 64.0, 128.0];
+
+    let min_distance = ideal_bar_counts
+        .iter()
+        .map(|&ideal| (num_bars - ideal).abs())
+        .fold(f32::INFINITY, f32::min);
+
+    // Calculate penalty based on deviation from ideal
+    // The further from a power-of-2 bar count, the higher the penalty
+    let penalty = match preference {
+        LoopPreference::Similarity => 0.0, // No adjustment
+        LoopPreference::MusicalStructure => {
+            // Strong preference for musical structure
+            // Penalty grows quadratically with distance from ideal
+            // Increased from 0.5 to 2.0 to more strongly prefer power-of-2 bar counts
+            min_distance * min_distance * 2.0
+        }
+        LoopPreference::Balanced => {
+            // Moderate preference for musical structure
+            // Linear penalty
+            min_distance * 0.2
+        }
+    };
+
+    penalty
 }
 
 /// Compute distance between two feature vectors
@@ -384,5 +668,54 @@ mod tests {
             let mean: f32 = normalized.iter().map(|f| f[dim]).sum::<f32>() / 3.0;
             assert!(mean.abs() < 1e-5);
         }
+    }
+
+    #[test]
+    fn test_musical_structure_score() {
+        // Test with 32 bars at 120 BPM (ideal for MusicalStructure mode)
+        let duration_32_bars = 64.0; // 32 bars * 4 beats * 0.5 seconds per beat
+        let tempo = Some(120.0);
+
+        // Similarity mode should return 0 (no adjustment)
+        let score_similarity =
+            calculate_musical_structure_score(duration_32_bars, tempo, LoopPreference::Similarity);
+        assert_eq!(score_similarity, 0.0);
+
+        // MusicalStructure mode should return 0 for ideal 32-bar loop
+        let score_musical = calculate_musical_structure_score(
+            duration_32_bars,
+            tempo,
+            LoopPreference::MusicalStructure,
+        );
+        assert!(score_musical < 0.1); // Should be very close to 0
+
+        // Balanced mode should also be low for ideal length
+        let score_balanced =
+            calculate_musical_structure_score(duration_32_bars, tempo, LoopPreference::Balanced);
+        assert!(score_balanced < 0.1);
+
+        // Test with non-ideal duration (20 bars) - should have higher penalty
+        let duration_20_bars = 40.0; // 20 bars * 4 beats * 0.5 seconds per beat
+
+        let score_musical_bad = calculate_musical_structure_score(
+            duration_20_bars,
+            tempo,
+            LoopPreference::MusicalStructure,
+        );
+        assert!(score_musical_bad > 1.0); // Should have significant penalty
+
+        // Test without tempo (should return 0)
+        let score_no_tempo = calculate_musical_structure_score(
+            duration_32_bars,
+            None,
+            LoopPreference::MusicalStructure,
+        );
+        assert_eq!(score_no_tempo, 0.0);
+    }
+
+    #[test]
+    fn test_loop_preference_default() {
+        let pref = LoopPreference::default();
+        assert!(matches!(pref, LoopPreference::Similarity));
     }
 }

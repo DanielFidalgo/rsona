@@ -8,7 +8,7 @@ use rsona::{
     },
     signal::{FrameConfig, frame},
     spectrum::{MelConfig, StftConfig, mel_spectrogram, stft},
-    structure::{BeatLoopConfig, DistanceMetric, find_loop_by_beats},
+    structure::{BeatLoopConfig, DistanceMetric, LoopPreference, find_loop_by_beats},
     temporal::{BeatConfig, TempoConfig, estimate_tempo, track_beats},
 };
 
@@ -34,6 +34,9 @@ struct Parameters {
     min_loop_seconds: f64,
     feature_window_frames: usize,
     distance_metric: String,
+    length_preference: f32,
+    strategy: String,
+    tempo_bpm: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -76,12 +79,43 @@ struct Segmentation {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: {} <audio_path> [--detailed]", args[0]);
+        eprintln!(
+            "Usage: {} <audio_path> [--detailed] [--length-preference=<value>] [--strategy=<mode>]",
+            args[0]
+        );
+        eprintln!("  --length-preference: 0.0 (pure similarity) to 0.1+ (prefer longer loops)");
+        eprintln!("                       Default: 0.0, Recommended: 0.02-0.05");
+        eprintln!("  --strategy:          similarity | balanced | musical");
+        eprintln!("                       similarity: Tightest match (game loops)");
+        eprintln!("                       musical: Phrase-aligned (DJ/composition)");
+        eprintln!("                       balanced: Hybrid approach");
         std::process::exit(1);
     }
 
     let audio_path = &args[1];
     let detailed = args.iter().any(|arg| arg == "--detailed");
+
+    // Parse length preference
+    let length_preference = args
+        .iter()
+        .find(|arg| arg.starts_with("--length-preference="))
+        .and_then(|arg| arg.strip_prefix("--length-preference="))
+        .and_then(|s| s.parse::<f32>().ok())
+        .unwrap_or(0.0);
+
+    // Parse strategy
+    let strategy_str = args
+        .iter()
+        .find(|arg| arg.starts_with("--strategy="))
+        .and_then(|arg| arg.strip_prefix("--strategy="))
+        .map(|s| s.to_lowercase())
+        .unwrap_or_else(|| "similarity".to_string());
+
+    let preference = match strategy_str.as_str() {
+        "musical" | "musical_structure" => LoopPreference::MusicalStructure,
+        "balanced" => LoopPreference::Balanced,
+        _ => LoopPreference::Similarity,
+    };
 
     let total_start = Instant::now();
 
@@ -210,6 +244,9 @@ fn main() {
         feature_window_frames: 50, // ~0.6 seconds worth of frames
         max_candidates: 100,
         metric: DistanceMetric::Manhattan,
+        length_preference,
+        preference,
+        tempo_bpm: Some(tempo.bpm),
     };
 
     let t_loop = Instant::now();
@@ -237,7 +274,33 @@ fn main() {
             "  Time: {:.2}s → {:.2}s ({:.2}s duration)",
             loop_result.start_seconds, loop_result.end_seconds, loop_result.duration_seconds
         );
-        eprintln!("  Score: {:.6}", loop_result.score);
+        eprintln!(
+            "  Score: {:.6} (length_preference: {:.3})",
+            loop_result.score, length_preference
+        );
+
+        // Show top 10 candidates
+        eprintln!("\nTop 10 candidates:");
+        for (i, (start_beat, end_beat, score)) in loop_result.candidates.iter().take(10).enumerate()
+        {
+            let start_sec = beats.beat_times[*start_beat];
+            let end_sec = beats.beat_times[*end_beat];
+            let duration = end_sec - start_sec;
+            let num_beats = end_beat - start_beat;
+            let num_bars = num_beats as f32 / 4.0;
+            eprintln!(
+                "  {}. beats {}-{} ({} beats, {:.1} bars): {:.2}s-{:.2}s ({:.2}s) score={:.4}",
+                i + 1,
+                start_beat,
+                end_beat,
+                num_beats,
+                num_bars,
+                start_sec,
+                end_sec,
+                duration,
+                score
+            );
+        }
     }
 
     // --- Build Result ---
@@ -262,6 +325,9 @@ fn main() {
             min_loop_seconds,
             feature_window_frames: 50,
             distance_metric: "manhattan".to_string(),
+            length_preference,
+            strategy: format!("{:?}", preference),
+            tempo_bpm: Some(tempo.bpm),
         },
         timing: Timing {
             load_time_ms: load_time.as_secs_f64() * 1000.0,
@@ -322,7 +388,10 @@ fn main() {
             result.best_result.loop_begin_sample,
             result.best_result.loop_end_sample
         );
-        eprintln!("  Score: {:.6}", result.best_result.score);
+        eprintln!(
+            "  Score: {:.6} (length_preference: {:.3})",
+            loop_result.score, length_preference
+        );
         eprintln!("\nSegmentation:");
         eprintln!("  Intro: {:.2}s", result.segmentation.intro_seconds);
         eprintln!("  Loop:  {:.2}s", result.segmentation.loop_seconds);
