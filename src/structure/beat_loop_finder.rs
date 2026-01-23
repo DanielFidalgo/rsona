@@ -444,13 +444,13 @@ fn find_valid_beat_pairs(
     if n_beats > 50 {
         (0..n_beats)
             .into_par_iter()
-            .flat_map(|b1| {
+            .flat_map(|beat1_idx| {
                 let mut local_candidates = Vec::new();
-                for b2 in (b1 + 1)..n_beats {
+                for beat2_idx in (beat1_idx + 1)..n_beats {
                     // Check length constraints
-                    let s1 = beat_frames[b1] * hop_size;
-                    let s2 = beat_frames[b2] * hop_size;
-                    let length = s2 - s1;
+                    let sample1 = beat_frames[beat1_idx] * hop_size;
+                    let sample2 = beat_frames[beat2_idx] * hop_size;
+                    let length = sample2 - sample1;
 
                     if length < cfg.min_length_samples {
                         continue;
@@ -463,8 +463,11 @@ fn find_valid_beat_pairs(
                     }
 
                     // Compute distance
-                    let distance =
-                        compute_distance(&beat_features[b1], &beat_features[b2], cfg.metric);
+                    let distance = compute_distance(
+                        &beat_features[beat1_idx],
+                        &beat_features[beat2_idx],
+                        cfg.metric,
+                    );
 
                     // Apply length weighting and/or musical structure preference
                     let duration_seconds = length as f32 / (sample_rate as f32 * hop_size as f32);
@@ -486,7 +489,7 @@ fn find_valid_beat_pairs(
                         score += structure_adjustment;
                     }
 
-                    local_candidates.push((b1, b2, score));
+                    local_candidates.push((beat1_idx, beat2_idx, score));
                 }
                 local_candidates
             })
@@ -494,12 +497,12 @@ fn find_valid_beat_pairs(
     } else {
         let mut candidates = Vec::new();
 
-        for b1 in 0..n_beats {
-            for b2 in (b1 + 1)..n_beats {
+        for beat1_idx in 0..n_beats {
+            for beat2_idx in (beat1_idx + 1)..n_beats {
                 // Check length constraints
-                let s1 = beat_frames[b1] * hop_size;
-                let s2 = beat_frames[b2] * hop_size;
-                let length = s2 - s1;
+                let sample1 = beat_frames[beat1_idx] * hop_size;
+                let sample2 = beat_frames[beat2_idx] * hop_size;
+                let length = sample2 - sample1;
 
                 if length < cfg.min_length_samples {
                     continue;
@@ -512,7 +515,11 @@ fn find_valid_beat_pairs(
                 }
 
                 // Compute distance
-                let distance = compute_distance(&beat_features[b1], &beat_features[b2], cfg.metric);
+                let distance = compute_distance(
+                    &beat_features[beat1_idx],
+                    &beat_features[beat2_idx],
+                    cfg.metric,
+                );
 
                 // Apply length weighting and/or musical structure preference
                 let duration_seconds = length as f32 / (sample_rate as f32 * hop_size as f32);
@@ -534,7 +541,7 @@ fn find_valid_beat_pairs(
                     score += structure_adjustment;
                 }
 
-                candidates.push((b1, b2, score));
+                candidates.push((beat1_idx, beat2_idx, score));
             }
         }
 

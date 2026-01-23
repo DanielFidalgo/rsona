@@ -49,8 +49,8 @@ fn hann(len: usize) -> Vec<f32> {
     let two_pi = std::f32::consts::TAU; // 2π
     (0..len)
         .map(|n| {
-            let x = two_pi * (n as f32) / n_minus_1;
-            0.5 - 0.5 * x.cos()
+            let angle = two_pi * (n as f32) / n_minus_1;
+            0.5 - 0.5 * angle.cos()
         })
         .collect()
 }
@@ -65,8 +65,8 @@ fn hamming(len: usize) -> Vec<f32> {
     let two_pi = std::f32::consts::TAU;
     (0..len)
         .map(|n| {
-            let x = two_pi * (n as f32) / n_minus_1;
-            0.54 - 0.46 * x.cos()
+            let angle = two_pi * (n as f32) / n_minus_1;
+            0.54 - 0.46 * angle.cos()
         })
         .collect()
 }

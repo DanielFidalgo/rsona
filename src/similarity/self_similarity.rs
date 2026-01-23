@@ -126,8 +126,8 @@ impl SelfSimilarity {
 /// If `max_lag` is set, only values within that diagonal band
 /// are computed; others are set to 0.0.
 pub fn self_similarity(features: &FrameFeatures<'_>, cfg: SelfSimilarityConfig) -> SelfSimilarity {
-    let n = features.n_frames();
-    let d = features.n_dims();
+    let num_frames = features.n_frames();
+    let num_dims = features.n_dims();
 
     // 1) Optional normalization
     let normed: Vec<f32>;
@@ -139,56 +139,58 @@ pub fn self_similarity(features: &FrameFeatures<'_>, cfg: SelfSimilarityConfig) 
     };
 
     // 2) Similarity computation with parallelization
-    let mut out = vec![0.0f32; n * n];
+    let mut out = vec![0.0f32; num_frames * num_frames];
 
     // Use parallelization for large matrices
-    if n > 10 {
-        out.par_chunks_mut(n).enumerate().for_each(|(i, row_out)| {
-            let fi = &data[i * d..(i + 1) * d];
+    if num_frames > 10 {
+        out.par_chunks_mut(num_frames)
+            .enumerate()
+            .for_each(|(i, row_out)| {
+                let frame_i = &data[i * num_dims..(i + 1) * num_dims];
 
-            let j_start = match cfg.max_lag {
-                Some(lag) => i.saturating_sub(lag),
-                None => 0,
-            };
-            let j_end = match cfg.max_lag {
-                Some(lag) => (i + lag + 1).min(n),
-                None => n,
-            };
-
-            for j in j_start..j_end {
-                let fj = &data[j * d..(j + 1) * d];
-                let sim = match cfg.metric {
-                    SimilarityMetric::Cosine => dot_optimized(fi, fj),
+                let j_start = match cfg.max_lag {
+                    Some(lag) => i.saturating_sub(lag),
+                    None => 0,
                 };
-                row_out[j] = sim;
-            }
-        });
+                let j_end = match cfg.max_lag {
+                    Some(lag) => (i + lag + 1).min(num_frames),
+                    None => num_frames,
+                };
+
+                for j in j_start..j_end {
+                    let frame_j = &data[j * num_dims..(j + 1) * num_dims];
+                    let sim = match cfg.metric {
+                        SimilarityMetric::Cosine => dot_optimized(frame_i, frame_j),
+                    };
+                    row_out[j] = sim;
+                }
+            });
     } else {
         // Sequential for small matrices to avoid parallelization overhead
-        for i in 0..n {
-            let fi = &data[i * d..(i + 1) * d];
+        for i in 0..num_frames {
+            let frame_i = &data[i * num_dims..(i + 1) * num_dims];
 
             let j_start = match cfg.max_lag {
                 Some(lag) => i.saturating_sub(lag),
                 None => 0,
             };
             let j_end = match cfg.max_lag {
-                Some(lag) => (i + lag + 1).min(n),
-                None => n,
+                Some(lag) => (i + lag + 1).min(num_frames),
+                None => num_frames,
             };
 
             for j in j_start..j_end {
-                let fj = &data[j * d..(j + 1) * d];
+                let frame_j = &data[j * num_dims..(j + 1) * num_dims];
                 let sim = match cfg.metric {
-                    SimilarityMetric::Cosine => dot_optimized(fi, fj),
+                    SimilarityMetric::Cosine => dot_optimized(frame_i, frame_j),
                 };
-                out[i * n + j] = sim;
+                out[i * num_frames + j] = sim;
             }
         }
     }
 
     SelfSimilarity {
-        n_frames: n,
+        n_frames: num_frames,
         data: out,
     }
 }

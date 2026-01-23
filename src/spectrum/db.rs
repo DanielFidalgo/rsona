@@ -51,8 +51,8 @@ pub fn power_to_db(input: &[f32], cfg: DbConfig) -> Vec<f32> {
     assert!(cfg.ref_value > 0.0, "ref_value must be > 0");
     assert!(cfg.amin > 0.0, "amin must be > 0");
 
-    let n = input.len();
-    if n == 0 {
+    let num_samples = input.len();
+    if num_samples == 0 {
         return Vec::new();
     }
 
@@ -60,22 +60,22 @@ pub fn power_to_db(input: &[f32], cfg: DbConfig) -> Vec<f32> {
     let log_ref = cfg.ref_value.log10();
     let const_factor = -10.0 * log_ref;
 
-    let mut out = if n > 1000 {
+    let mut out = if num_samples > 1000 {
         // Parallel path for large arrays
         input
             .par_iter()
-            .map(|&v| {
-                let clamped = v.max(cfg.amin);
+            .map(|&value| {
+                let clamped = value.max(cfg.amin);
                 10.0 * clamped.log10() + const_factor
             })
             .collect()
     } else {
         // Sequential path with manual unrolling for better SIMD
-        let mut out = Vec::with_capacity(n);
+        let mut out = Vec::with_capacity(num_samples);
 
         const CHUNK: usize = 8;
-        let main_chunks = n / CHUNK;
-        let _remainder = n % CHUNK;
+        let main_chunks = num_samples / CHUNK;
+        let _remainder = num_samples % CHUNK;
 
         // Main loop - unrolled for SIMD
         for chunk_idx in 0..main_chunks {
@@ -101,9 +101,9 @@ pub fn power_to_db(input: &[f32], cfg: DbConfig) -> Vec<f32> {
         }
 
         // Handle remainder
-        for idx in (main_chunks * CHUNK)..n {
-            let v = input[idx].max(cfg.amin);
-            out.push(10.0 * v.log10() + const_factor);
+        for idx in (main_chunks * CHUNK)..num_samples {
+            let value = input[idx].max(cfg.amin);
+            out.push(10.0 * value.log10() + const_factor);
         }
 
         out
@@ -112,7 +112,7 @@ pub fn power_to_db(input: &[f32], cfg: DbConfig) -> Vec<f32> {
     // Optional dynamic range clipping.
     if let Some(top_db) = cfg.top_db {
         // Find max in parallel if large enough
-        let max_db = if n > 1000 {
+        let max_db = if num_samples > 1000 {
             out.par_iter()
                 .copied()
                 .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
@@ -124,16 +124,16 @@ pub fn power_to_db(input: &[f32], cfg: DbConfig) -> Vec<f32> {
         let min_db = max_db - top_db;
 
         // Clipping with vectorization hints
-        if n > 1000 {
-            out.par_iter_mut().for_each(|v| {
-                if *v < min_db {
-                    *v = min_db;
+        if num_samples > 1000 {
+            out.par_iter_mut().for_each(|value| {
+                if *value < min_db {
+                    *value = min_db;
                 }
             });
         } else {
             const CHUNK: usize = 8;
-            let main_chunks = n / CHUNK;
-            let _remainder = n % CHUNK;
+            let main_chunks = num_samples / CHUNK;
+            let _remainder = num_samples % CHUNK;
 
             for chunk_idx in 0..main_chunks {
                 let base = chunk_idx * CHUNK;
@@ -148,7 +148,7 @@ pub fn power_to_db(input: &[f32], cfg: DbConfig) -> Vec<f32> {
                 out[base + 7] = out[base + 7].max(min_db);
             }
 
-            for idx in (main_chunks * CHUNK)..n {
+            for idx in (main_chunks * CHUNK)..num_samples {
                 out[idx] = out[idx].max(min_db);
             }
         }
@@ -167,8 +167,8 @@ pub fn amplitude_to_db(input: &[f32], cfg: DbConfig) -> Vec<f32> {
     assert!(cfg.ref_value > 0.0, "ref_value must be > 0");
     assert!(cfg.amin > 0.0, "amin must be > 0");
 
-    let n = input.len();
-    if n == 0 {
+    let num_samples = input.len();
+    if num_samples == 0 {
         return Vec::new();
     }
 
@@ -176,22 +176,22 @@ pub fn amplitude_to_db(input: &[f32], cfg: DbConfig) -> Vec<f32> {
     let log_ref = cfg.ref_value.log10();
     let const_factor = -20.0 * log_ref;
 
-    let mut out = if n > 1000 {
+    let mut out = if num_samples > 1000 {
         // Parallel path for large arrays
         input
             .par_iter()
-            .map(|&v| {
-                let clamped = v.max(cfg.amin);
+            .map(|&value| {
+                let clamped = value.max(cfg.amin);
                 20.0 * clamped.log10() + const_factor
             })
             .collect()
     } else {
         // Sequential path with manual unrolling
-        let mut out = Vec::with_capacity(n);
+        let mut out = Vec::with_capacity(num_samples);
 
         const CHUNK: usize = 8;
-        let main_chunks = n / CHUNK;
-        let _remainder = n % CHUNK;
+        let main_chunks = num_samples / CHUNK;
+        let _remainder = num_samples % CHUNK;
 
         for chunk_idx in 0..main_chunks {
             let base = chunk_idx * CHUNK;
@@ -215,9 +215,9 @@ pub fn amplitude_to_db(input: &[f32], cfg: DbConfig) -> Vec<f32> {
             out.push(20.0 * v7.log10() + const_factor);
         }
 
-        for idx in (main_chunks * CHUNK)..n {
-            let v = input[idx].max(cfg.amin);
-            out.push(20.0 * v.log10() + const_factor);
+        for idx in (main_chunks * CHUNK)..num_samples {
+            let value = input[idx].max(cfg.amin);
+            out.push(20.0 * value.log10() + const_factor);
         }
 
         out
@@ -225,7 +225,7 @@ pub fn amplitude_to_db(input: &[f32], cfg: DbConfig) -> Vec<f32> {
 
     // Optional dynamic range clipping
     if let Some(top_db) = cfg.top_db {
-        let max_db = if n > 1000 {
+        let max_db = if num_samples > 1000 {
             out.par_iter()
                 .copied()
                 .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
@@ -236,13 +236,13 @@ pub fn amplitude_to_db(input: &[f32], cfg: DbConfig) -> Vec<f32> {
 
         let min_db = max_db - top_db;
 
-        if n > 1000 {
-            out.par_iter_mut().for_each(|v| {
-                *v = (*v).max(min_db);
+        if num_samples > 1000 {
+            out.par_iter_mut().for_each(|value| {
+                *value = (*value).max(min_db);
             });
         } else {
             const CHUNK: usize = 8;
-            let main_chunks = n / CHUNK;
+            let main_chunks = num_samples / CHUNK;
 
             for chunk_idx in 0..main_chunks {
                 let base = chunk_idx * CHUNK;
@@ -257,7 +257,7 @@ pub fn amplitude_to_db(input: &[f32], cfg: DbConfig) -> Vec<f32> {
                 out[base + 7] = out[base + 7].max(min_db);
             }
 
-            for idx in (main_chunks * CHUNK)..n {
+            for idx in (main_chunks * CHUNK)..num_samples {
                 out[idx] = out[idx].max(min_db);
             }
         }

@@ -136,33 +136,33 @@ pub fn mfcc(mel: &MelSpectrogram, cfg: MfccConfig) -> MfccResult {
     assert!(cfg.n_mfcc > 0, "n_mfcc must be > 0");
 
     let n_frames = mel.n_frames();
-    let n_mels = mel.n_mels();
-    let n_mfcc = cfg.n_mfcc.min(n_mels);
+    let num_mels = mel.n_mels();
+    let n_mfcc = cfg.n_mfcc.min(num_mels);
 
     // Step 1: Convert mel spectrogram to log scale (dB)
     // We need to do this in two passes to apply top_db clipping correctly
-    let mut log_mel = vec![0.0f32; n_frames * n_mels];
+    let mut log_mel = vec![0.0f32; n_frames * num_mels];
 
     // First pass: compute log values (parallelized for better performance)
     if n_frames > 10 {
         log_mel
-            .par_chunks_mut(n_mels)
+            .par_chunks_mut(num_mels)
             .enumerate()
-            .for_each(|(t, log_row)| {
-                let x = mel.frame(t).expect("n_frames mismatch");
-                for m in 0..n_mels {
-                    let v = x[m].max(cfg.log_floor);
-                    log_row[m] = 10.0 * v.log10();
+            .for_each(|(frame_index, log_row)| {
+                let mel_frame = mel.frame(frame_index).expect("n_frames mismatch");
+                for mel_idx in 0..num_mels {
+                    let value = mel_frame[mel_idx].max(cfg.log_floor);
+                    log_row[mel_idx] = 10.0 * value.log10();
                 }
             });
     } else {
-        for t in 0..n_frames {
-            let x = mel.frame(t).expect("n_frames mismatch");
-            let log_row = &mut log_mel[t * n_mels..(t + 1) * n_mels];
+        for frame_index in 0..n_frames {
+            let mel_frame = mel.frame(frame_index).expect("n_frames mismatch");
+            let log_row = &mut log_mel[frame_index * num_mels..(frame_index + 1) * num_mels];
 
-            for m in 0..n_mels {
-                let v = x[m].max(cfg.log_floor);
-                log_row[m] = 10.0 * v.log10();
+            for mel_idx in 0..num_mels {
+                let value = mel_frame[mel_idx].max(cfg.log_floor);
+                log_row[mel_idx] = 10.0 * value.log10();
             }
         }
     }
@@ -189,15 +189,15 @@ pub fn mfcc(mel: &MelSpectrogram, cfg: MfccConfig) -> MfccResult {
     if n_frames > 10 {
         out.par_chunks_mut(n_mfcc)
             .enumerate()
-            .for_each(|(t, out_row)| {
-                let log_row = &log_mel[t * n_mels..(t + 1) * n_mels];
+            .for_each(|(frame_index, out_row)| {
+                let log_row = &log_mel[frame_index * num_mels..(frame_index + 1) * num_mels];
                 dct2_fft_frame(log_row, out_row, n_mfcc, cfg.dct_norm);
             });
     } else {
         // Sequential path
-        for t in 0..n_frames {
-            let log_row = &log_mel[t * n_mels..(t + 1) * n_mels];
-            let out_row = &mut out[t * n_mfcc..(t + 1) * n_mfcc];
+        for frame_index in 0..n_frames {
+            let log_row = &log_mel[frame_index * num_mels..(frame_index + 1) * num_mels];
+            let out_row = &mut out[frame_index * n_mfcc..(frame_index + 1) * n_mfcc];
             dct2_fft_frame(log_row, out_row, n_mfcc, cfg.dct_norm);
         }
     }
@@ -209,7 +209,7 @@ pub fn mfcc(mel: &MelSpectrogram, cfg: MfccConfig) -> MfccResult {
 
     MfccResult {
         n_frames,
-        n_mels,
+        n_mels: num_mels,
         n_mfcc,
         data: out,
     }
@@ -229,23 +229,23 @@ pub fn mfcc(mel: &MelSpectrogram, cfg: MfccConfig) -> MfccResult {
 /// X_k = sum_{n=0}^{N-1} x_n * cos(pi/N * (n + 0.5) * k)
 #[inline(always)]
 fn dct2_fft_frame(input: &[f32], output: &mut [f32], n_mfcc: usize, norm: DctNorm) {
-    let n = input.len();
+    let num_mels = input.len();
 
     DCT_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        cache.prepare(n);
+        cache.prepare(num_mels);
 
-        let fft = cache.planner.plan_fft_forward(n);
+        let fft = cache.planner.plan_fft_forward(num_mels);
 
         // Reorder input for efficient DCT via FFT
         // Even indices: x[0], x[2], x[4], ...
-        // Odd indices (reversed): x[n-1], x[n-3], x[n-5], ...
-        let half = n.div_ceil(2);
+        // Odd indices (reversed): x[num_mels-1], x[num_mels-3], x[num_mels-5], ...
+        let half = num_mels.div_ceil(2);
         for i in 0..half {
             cache.fft_buffer[i] = Complex::new(input[2 * i], 0.0);
         }
-        for i in 0..(n - half) {
-            let src_idx = n - 2 * i - 1;
+        for i in 0..(num_mels - half) {
+            let src_idx = num_mels - 2 * i - 1;
             cache.fft_buffer[half + i] = Complex::new(input[src_idx], 0.0);
         }
 
@@ -255,22 +255,23 @@ fn dct2_fft_frame(input: &[f32], output: &mut [f32], n_mfcc: usize, norm: DctNor
         // Extract DCT coefficients with pre-computed twiddle factors
         let base_scale = match norm {
             DctNorm::None => 2.0,
-            DctNorm::Ortho => (2.0 / n as f32).sqrt(),
+            DctNorm::Ortho => (2.0 / num_mels as f32).sqrt(),
         };
 
-        for k in 0..n_mfcc.min(n) {
+        for coeff_idx in 0..n_mfcc.min(num_mels) {
             // Apply phase correction using pre-computed twiddle factors
-            let twiddle = cache.twiddle_factors[k];
-            let real = cache.fft_buffer[k].re * twiddle.re - cache.fft_buffer[k].im * twiddle.im;
+            let twiddle = cache.twiddle_factors[coeff_idx];
+            let real = cache.fft_buffer[coeff_idx].re * twiddle.re
+                - cache.fft_buffer[coeff_idx].im * twiddle.im;
 
             // Apply normalization
-            let scale = if norm == DctNorm::Ortho && k == 0 {
+            let scale = if norm == DctNorm::Ortho && coeff_idx == 0 {
                 base_scale / 2.0f32.sqrt()
             } else {
                 base_scale
             };
 
-            output[k] = real * scale;
+            output[coeff_idx] = real * scale;
         }
     });
 }
@@ -280,16 +281,17 @@ fn dct2_fft_frame(input: &[f32], output: &mut [f32], n_mfcc: usize, norm: DctNor
 /// lifter formula (common):
 /// L[n] = 1 + (L/2) * sin(pi * n / L)
 fn apply_lifter(data: &mut [f32], n_frames: usize, n_mfcc: usize, lifter: usize) {
-    let l = lifter as f32;
+    let lifter_value = lifter as f32;
     let mut lift = vec![1.0f32; n_mfcc];
-    for n in 0..n_mfcc {
-        lift[n] = 1.0 + 0.5 * l * (std::f32::consts::PI * n as f32 / l).sin();
+    for coeff_idx in 0..n_mfcc {
+        lift[coeff_idx] = 1.0
+            + 0.5 * lifter_value * (std::f32::consts::PI * coeff_idx as f32 / lifter_value).sin();
     }
 
-    for t in 0..n_frames {
-        let row = &mut data[t * n_mfcc..(t + 1) * n_mfcc];
-        for n in 0..n_mfcc {
-            row[n] *= lift[n];
+    for frame_index in 0..n_frames {
+        let row = &mut data[frame_index * n_mfcc..(frame_index + 1) * n_mfcc];
+        for coeff_idx in 0..n_mfcc {
+            row[coeff_idx] *= lift[coeff_idx];
         }
     }
 }

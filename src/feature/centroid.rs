@@ -13,21 +13,25 @@ pub fn spectral_centroid(spec: &Spectrogram) -> SpectralCentroid {
     let n_frames = spec.n_frames();
     let n_bins = spec.n_bins();
 
-    let values = auto_map(n_frames, |t| {
-        let frame = spec.frame(t).expect("frame index out of bounds");
+    let values = auto_map(n_frames, |frame_index| {
+        let frame = spec.frame(frame_index).expect("frame index out of bounds");
 
-        let mut num = 0.0f32;
-        let mut den = 0.0f32;
+        let mut numerator = 0.0f32;
+        let mut denominator = 0.0f32;
 
-        for b in 0..n_bins {
-            let freq = spec.bin_frequency_hz(b).unwrap() as f32;
-            let magnitude = frame[b].norm();
+        for bin_idx in 0..n_bins {
+            let freq = spec.bin_frequency_hz(bin_idx).unwrap() as f32;
+            let magnitude = frame[bin_idx].norm();
 
-            num += freq * magnitude;
-            den += magnitude;
+            numerator += freq * magnitude;
+            denominator += magnitude;
         }
 
-        if den > 0.0 { num / den } else { 0.0 }
+        if denominator > 0.0 {
+            numerator / denominator
+        } else {
+            0.0
+        }
     });
 
     SpectralCentroid::new(values)

@@ -31,22 +31,22 @@ pub fn spectral_flux(spec: &Spectrogram) -> SpectralFlux {
     let all_power: Vec<Vec<f32>> = if n_frames > 10 {
         (0..n_frames)
             .into_par_iter()
-            .map(|t| {
-                let frame = spec.frame(t).expect("frame index out of bounds");
+            .map(|frame_index| {
+                let frame = spec.frame(frame_index).expect("frame index out of bounds");
                 let mut power = vec![0.0f32; n_bins];
-                for b in 0..n_bins {
-                    power[b] = frame[b].norm_sqr();
+                for bin_idx in 0..n_bins {
+                    power[bin_idx] = frame[bin_idx].norm_sqr();
                 }
                 power
             })
             .collect()
     } else {
         (0..n_frames)
-            .map(|t| {
-                let frame = spec.frame(t).expect("frame index out of bounds");
+            .map(|frame_index| {
+                let frame = spec.frame(frame_index).expect("frame index out of bounds");
                 let mut power = vec![0.0f32; n_bins];
-                for b in 0..n_bins {
-                    power[b] = frame[b].norm_sqr();
+                for bin_idx in 0..n_bins {
+                    power[bin_idx] = frame[bin_idx].norm_sqr();
                 }
                 power
             })
@@ -59,13 +59,13 @@ pub fn spectral_flux(spec: &Spectrogram) -> SpectralFlux {
             .par_iter_mut()
             .enumerate()
             .for_each(|(idx, flux_val)| {
-                let t = idx + 1;
-                let curr_power = &all_power[t];
-                let prev_power = &all_power[t - 1];
+                let frame_index = idx + 1;
+                let curr_power = &all_power[frame_index];
+                let prev_power = &all_power[frame_index - 1];
 
                 let mut flux = 0.0f32;
-                for b in 0..n_bins {
-                    let diff = curr_power[b] - prev_power[b];
+                for bin_idx in 0..n_bins {
+                    let diff = curr_power[bin_idx] - prev_power[bin_idx];
                     if diff > 0.0 {
                         flux += diff;
                     }
@@ -73,18 +73,18 @@ pub fn spectral_flux(spec: &Spectrogram) -> SpectralFlux {
                 *flux_val = flux;
             });
     } else {
-        for t in 1..n_frames {
-            let curr_power = &all_power[t];
-            let prev_power = &all_power[t - 1];
+        for frame_index in 1..n_frames {
+            let curr_power = &all_power[frame_index];
+            let prev_power = &all_power[frame_index - 1];
 
             let mut flux = 0.0f32;
-            for b in 0..n_bins {
-                let diff = curr_power[b] - prev_power[b];
+            for bin_idx in 0..n_bins {
+                let diff = curr_power[bin_idx] - prev_power[bin_idx];
                 if diff > 0.0 {
                     flux += diff;
                 }
             }
-            values[t] = flux;
+            values[frame_index] = flux;
         }
     }
 

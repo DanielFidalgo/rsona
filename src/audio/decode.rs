@@ -15,14 +15,14 @@ use super::{AudioError, Buffer};
 /// Load audio file.
 pub fn load<P: AsRef<Path>>(path: P) -> Result<Buffer, AudioError> {
     let file = File::open(path)?;
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let media_source_stream = MediaSourceStream::new(Box::new(file), Default::default());
 
     let hint = Hint::new();
 
     let probed = get_probe()
         .format(
             &hint,
-            mss,
+            media_source_stream,
             &FormatOptions::default(),
             &MetadataOptions::default(),
         )
@@ -59,7 +59,7 @@ pub fn load<P: AsRef<Path>>(path: P) -> Result<Buffer, AudioError> {
     let mut samples = Vec::<f32>::with_capacity(estimated_capacity);
 
     // Reuse sample buffer across packets to avoid repeated allocation
-    let mut sample_buf: Option<SampleBuffer<f32>> = None;
+    let mut sample_buffer_cache: Option<SampleBuffer<f32>> = None;
 
     loop {
         let packet = match format.next_packet() {
@@ -77,18 +77,18 @@ pub fn load<P: AsRef<Path>>(path: P) -> Result<Buffer, AudioError> {
             .map_err(|_| AudioError::DecodeError)?;
 
         // Reuse or create sample buffer
-        let buf = sample_buf.get_or_insert_with(|| {
+        let sample_buffer = sample_buffer_cache.get_or_insert_with(|| {
             SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec())
         });
 
         // Ensure buffer has enough capacity
-        if buf.capacity() < decoded.capacity() {
-            *buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
+        if sample_buffer.capacity() < decoded.capacity() {
+            *sample_buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
         }
 
-        buf.copy_interleaved_ref(decoded);
+        sample_buffer.copy_interleaved_ref(decoded);
 
-        samples.extend_from_slice(buf.samples());
+        samples.extend_from_slice(sample_buffer.samples());
     }
 
     Ok(Buffer::new(sample_rate, channels, samples))

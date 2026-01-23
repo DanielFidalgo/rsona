@@ -184,23 +184,25 @@ pub fn mel_spectrogram(spec: &Spectrogram, cfg: MelConfig) -> MelSpectrogram {
     if n_frames > 10 {
         out.par_chunks_mut(cfg.n_mels)
             .enumerate()
-            .for_each(|(t, out_row)| {
-                let x = spec.frame(t).expect("n_frames mismatch");
+            .for_each(|(frame_index, out_row)| {
+                let spectrum_frame = spec.frame(frame_index).expect("n_frames mismatch");
 
                 // Apply sparse mel filters
-                for m in 0..cfg.n_mels {
-                    out_row[m] = apply_sparse_filter(&bank.sparse_filters[m], x);
+                for mel_idx in 0..cfg.n_mels {
+                    out_row[mel_idx] =
+                        apply_sparse_filter(&bank.sparse_filters[mel_idx], spectrum_frame);
                 }
             });
     } else {
         // Sequential path for small frame counts
-        for t in 0..n_frames {
-            let x = spec.frame(t).expect("n_frames mismatch");
-            let out_row = &mut out[t * cfg.n_mels..(t + 1) * cfg.n_mels];
+        for frame_index in 0..n_frames {
+            let spectrum_frame = spec.frame(frame_index).expect("n_frames mismatch");
+            let out_row = &mut out[frame_index * cfg.n_mels..(frame_index + 1) * cfg.n_mels];
 
             // Apply sparse mel filters
-            for m in 0..cfg.n_mels {
-                out_row[m] = apply_sparse_filter(&bank.sparse_filters[m], x);
+            for mel_idx in 0..cfg.n_mels {
+                out_row[mel_idx] =
+                    apply_sparse_filter(&bank.sparse_filters[mel_idx], spectrum_frame);
             }
         }
     }
@@ -217,7 +219,10 @@ pub fn mel_spectrogram(spec: &Spectrogram, cfg: MelConfig) -> MelSpectrogram {
 
 /// Apply sparse mel filter: only compute power for non-zero filter coefficients
 #[inline(always)]
-fn apply_sparse_filter(filter: &SparseFilter, x: &[rustfft::num_complex::Complex<f32>]) -> f32 {
+fn apply_sparse_filter(
+    filter: &SparseFilter,
+    spectrum_frame: &[rustfft::num_complex::Complex<f32>],
+) -> f32 {
     let len = filter.end - filter.start;
     let mut sum = 0.0f32;
 
@@ -232,21 +237,21 @@ fn apply_sparse_filter(filter: &SparseFilter, x: &[rustfft::num_complex::Complex
         let base_bin = filter.start + base_filter;
 
         // Compute power and multiply by filter coefficient in one go
-        sum += x[base_bin].norm_sqr() * filter.coeffs[base_filter];
-        sum += x[base_bin + 1].norm_sqr() * filter.coeffs[base_filter + 1];
-        sum += x[base_bin + 2].norm_sqr() * filter.coeffs[base_filter + 2];
-        sum += x[base_bin + 3].norm_sqr() * filter.coeffs[base_filter + 3];
-        sum += x[base_bin + 4].norm_sqr() * filter.coeffs[base_filter + 4];
-        sum += x[base_bin + 5].norm_sqr() * filter.coeffs[base_filter + 5];
-        sum += x[base_bin + 6].norm_sqr() * filter.coeffs[base_filter + 6];
-        sum += x[base_bin + 7].norm_sqr() * filter.coeffs[base_filter + 7];
+        sum += spectrum_frame[base_bin].norm_sqr() * filter.coeffs[base_filter];
+        sum += spectrum_frame[base_bin + 1].norm_sqr() * filter.coeffs[base_filter + 1];
+        sum += spectrum_frame[base_bin + 2].norm_sqr() * filter.coeffs[base_filter + 2];
+        sum += spectrum_frame[base_bin + 3].norm_sqr() * filter.coeffs[base_filter + 3];
+        sum += spectrum_frame[base_bin + 4].norm_sqr() * filter.coeffs[base_filter + 4];
+        sum += spectrum_frame[base_bin + 5].norm_sqr() * filter.coeffs[base_filter + 5];
+        sum += spectrum_frame[base_bin + 6].norm_sqr() * filter.coeffs[base_filter + 6];
+        sum += spectrum_frame[base_bin + 7].norm_sqr() * filter.coeffs[base_filter + 7];
     }
 
     // Handle remainder
     for i in 0..remainder {
         let filter_idx = main_chunks * CHUNK + i;
         let bin_idx = filter.start + filter_idx;
-        sum += x[bin_idx].norm_sqr() * filter.coeffs[filter_idx];
+        sum += spectrum_frame[bin_idx].norm_sqr() * filter.coeffs[filter_idx];
     }
 
     sum
@@ -272,8 +277,8 @@ fn build_mel_filterbank(
 
     let mut mel_points = Vec::with_capacity(n_mels + 2);
     for i in 0..(n_mels + 2) {
-        let a = i as f32 / (n_mels + 1) as f32;
-        mel_points.push(m_min + a * (m_max - m_min));
+        let alpha = i as f32 / (n_mels + 1) as f32;
+        mel_points.push(m_min + alpha * (m_max - m_min));
     }
 
     let hz_points: Vec<f32> = mel_points
@@ -296,10 +301,10 @@ fn build_mel_filterbank(
     // 3) Build sparse triangular filters.
     let mut sparse_filters = Vec::with_capacity(n_mels);
 
-    for m in 0..n_mels {
-        let left = bins[m];
-        let center = bins[m + 1];
-        let right = bins[m + 2];
+    for mel_idx in 0..n_mels {
+        let left = bins[mel_idx];
+        let center = bins[mel_idx + 1];
+        let right = bins[mel_idx + 2];
 
         if left == center || center == right {
             // Degenerate; create empty filter
@@ -331,8 +336,8 @@ fn build_mel_filterbank(
 
         // Optional Slaney-style normalization: scale each filter by 2/(f_{m+2}-f_m)
         if normalize {
-            let f_left = hz_points[m];
-            let f_right = hz_points[m + 2];
+            let f_left = hz_points[mel_idx];
+            let f_right = hz_points[mel_idx + 2];
             let enorm = 2.0 / (f_right - f_left).max(1e-12);
             for coeff in &mut coeffs {
                 *coeff *= enorm;

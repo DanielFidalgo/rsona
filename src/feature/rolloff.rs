@@ -18,19 +18,19 @@ pub fn spectral_rolloff(spec: &Spectrogram, roll_percent: f32) -> SpectralRollof
     let n_frames = spec.n_frames();
     let n_bins = spec.n_bins();
 
-    let values = auto_map(n_frames, |t| {
-        let frame = spec.frame(t).expect("frame index out of bounds");
+    let values = auto_map(n_frames, |frame_index| {
+        let frame = spec.frame(frame_index).expect("frame index out of bounds");
 
-        let total_energy: f32 = frame.iter().map(|c| c.norm()).sum();
+        let total_energy: f32 = frame.iter().map(|complex_bin| complex_bin.norm()).sum();
         let threshold = total_energy * roll_percent;
 
         let mut cumulative = 0.0f32;
         let mut roll_freq = 0.0f32;
 
-        for b in 0..n_bins {
-            cumulative += frame[b].norm();
+        for bin_idx in 0..n_bins {
+            cumulative += frame[bin_idx].norm();
             if cumulative >= threshold {
-                roll_freq = spec.bin_frequency_hz(b).unwrap() as f32;
+                roll_freq = spec.bin_frequency_hz(bin_idx).unwrap() as f32;
                 break;
             }
         }

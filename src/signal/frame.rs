@@ -281,19 +281,19 @@ pub fn frame(audio: &Buffer, config: FrameConfig) -> Result<Frames, SignalError>
     }
 
     // 1) Extract a single-channel signal (explicit selection or mixdown).
-    let mut x = extract_channel(audio, config.channel_mode)?;
+    let mut mono_signal = extract_channel(audio, config.channel_mode)?;
 
     // 2) Apply center padding if requested (standard behavior).
     //    Pads frame_size/2 zeros at start and end, centering first frame at sample 0.
     if config.center {
         let pad = config.frame_size / 2;
-        let mut padded = vec![0.0f32; x.len() + 2 * pad];
-        padded[pad..pad + x.len()].copy_from_slice(&x);
-        x = padded;
+        let mut padded = vec![0.0f32; mono_signal.len() + 2 * pad];
+        padded[pad..pad + mono_signal.len()].copy_from_slice(&mono_signal);
+        mono_signal = padded;
     }
 
     // 3) Determine number of frames.
-    let n = x.len();
+    let n = mono_signal.len();
     // When center padding is enabled, use Padding::None logic for frame counting
     // because center padding already handles edge alignment (standard behavior).
     let effective_padding = if config.center {
@@ -329,7 +329,7 @@ pub fn frame(audio: &Buffer, config: FrameConfig) -> Result<Frames, SignalError>
                 // Fused copy-and-window with SIMD-friendly unrolling
                 if to_copy > 0 {
                     fused_copy_window_optimized(
-                        &x[start..start + to_copy],
+                        &mono_signal[start..start + to_copy],
                         &window.coeffs[..to_copy],
                         &mut out_row[..to_copy],
                     );
@@ -355,7 +355,7 @@ pub fn frame(audio: &Buffer, config: FrameConfig) -> Result<Frames, SignalError>
             // Fused copy-and-window with SIMD-friendly unrolling
             if to_copy > 0 {
                 fused_copy_window_optimized(
-                    &x[start..start + to_copy],
+                    &mono_signal[start..start + to_copy],
                     &window.coeffs[..to_copy],
                     &mut out_row[..to_copy],
                 );
@@ -425,10 +425,10 @@ fn extract_channel(audio: &Buffer, mode: ChannelMode) -> Result<Vec<f32>, Signal
     let n_frames = audio.samples.len() / audio.channels;
 
     match mode {
-        ChannelMode::Channel(ch) => {
-            if ch >= audio.channels {
+        ChannelMode::Channel(channel) => {
+            if channel >= audio.channels {
                 return Err(SignalError::ChannelOutOfRange {
-                    requested: ch,
+                    requested: channel,
                     available: audio.channels,
                 });
             }
@@ -447,7 +447,7 @@ fn extract_channel(audio: &Buffer, mode: ChannelMode) -> Result<Vec<f32>, Signal
                         let end_frame = (start_frame + chunk.len()).min(n_frames);
 
                         for (local_idx, frame_idx) in (start_frame..end_frame).enumerate() {
-                            chunk[local_idx] = audio.samples[frame_idx * channels + ch];
+                            chunk[local_idx] = audio.samples[frame_idx * channels + channel];
                         }
                     });
             } else {
@@ -458,18 +458,18 @@ fn extract_channel(audio: &Buffer, mode: ChannelMode) -> Result<Vec<f32>, Signal
 
                 for chunk_idx in 0..main_chunks {
                     let base = chunk_idx * CHUNK;
-                    out[base] = audio.samples[base * channels + ch];
-                    out[base + 1] = audio.samples[(base + 1) * channels + ch];
-                    out[base + 2] = audio.samples[(base + 2) * channels + ch];
-                    out[base + 3] = audio.samples[(base + 3) * channels + ch];
-                    out[base + 4] = audio.samples[(base + 4) * channels + ch];
-                    out[base + 5] = audio.samples[(base + 5) * channels + ch];
-                    out[base + 6] = audio.samples[(base + 6) * channels + ch];
-                    out[base + 7] = audio.samples[(base + 7) * channels + ch];
+                    out[base] = audio.samples[base * channels + channel];
+                    out[base + 1] = audio.samples[(base + 1) * channels + channel];
+                    out[base + 2] = audio.samples[(base + 2) * channels + channel];
+                    out[base + 3] = audio.samples[(base + 3) * channels + channel];
+                    out[base + 4] = audio.samples[(base + 4) * channels + channel];
+                    out[base + 5] = audio.samples[(base + 5) * channels + channel];
+                    out[base + 6] = audio.samples[(base + 6) * channels + channel];
+                    out[base + 7] = audio.samples[(base + 7) * channels + channel];
                 }
 
                 for i in (main_chunks * CHUNK)..n_frames {
-                    out[i] = audio.samples[i * channels + ch];
+                    out[i] = audio.samples[i * channels + channel];
                 }
             }
 
@@ -534,8 +534,8 @@ fn extract_channel(audio: &Buffer, mode: ChannelMode) -> Result<Vec<f32>, Signal
                 for i in 0..n_frames {
                     let base = i * channels;
                     let mut sum = 0.0f32;
-                    for c in 0..channels {
-                        sum += audio.samples[base + c];
+                    for channel_idx in 0..channels {
+                        sum += audio.samples[base + channel_idx];
                     }
                     out[i] = sum * inv_channels;
                 }

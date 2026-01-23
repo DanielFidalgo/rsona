@@ -167,16 +167,16 @@ pub fn chroma_stft(spec: &Spectrogram, cfg: ChromaConfig) -> Chromagram {
     if n_frames > 10 {
         out.par_chunks_mut(cfg.n_chroma)
             .enumerate()
-            .for_each(|(t, out_row)| {
-                let x = spec.frame(t).expect("n_frames mismatch");
-                apply_chroma_filters(&chroma_filters, x, out_row);
+            .for_each(|(frame_index, out_row)| {
+                let spectrum_frame = spec.frame(frame_index).expect("n_frames mismatch");
+                apply_chroma_filters(&chroma_filters, spectrum_frame, out_row);
                 normalize_chroma_frame(out_row, cfg.norm);
             });
     } else {
-        for t in 0..n_frames {
-            let x = spec.frame(t).expect("n_frames mismatch");
-            let out_row = &mut out[t * cfg.n_chroma..(t + 1) * cfg.n_chroma];
-            apply_chroma_filters(&chroma_filters, x, out_row);
+        for frame_index in 0..n_frames {
+            let spectrum_frame = spec.frame(frame_index).expect("n_frames mismatch");
+            let out_row = &mut out[frame_index * cfg.n_chroma..(frame_index + 1) * cfg.n_chroma];
+            apply_chroma_filters(&chroma_filters, spectrum_frame, out_row);
             normalize_chroma_frame(out_row, cfg.norm);
         }
     }
@@ -360,7 +360,7 @@ pub fn build_chroma_filterbank(
 #[inline]
 fn apply_chroma_filters(
     bank: &ChromaFilterBank,
-    x: &[rustfft::num_complex::Complex<f32>],
+    spectrum_frame: &[rustfft::num_complex::Complex<f32>],
     out: &mut [f32],
 ) {
     let n_chroma = bank.filters.len();
@@ -373,7 +373,7 @@ fn apply_chroma_filters(
             .for_each(|(out_val, filter)| {
                 let mut sum = 0.0f32;
                 for &(bin_idx, weight) in filter {
-                    let magnitude = x[bin_idx].norm();
+                    let magnitude = spectrum_frame[bin_idx].norm();
                     sum += magnitude * weight;
                 }
                 *out_val = sum;
@@ -389,7 +389,7 @@ fn apply_chroma_filters(
         for (chroma_idx, filter) in bank.filters.iter().enumerate() {
             let mut sum = 0.0f32;
             for &(bin_idx, weight) in filter {
-                let magnitude = x[bin_idx].norm();
+                let magnitude = spectrum_frame[bin_idx].norm();
                 sum += magnitude * weight;
             }
             out[chroma_idx] = sum;

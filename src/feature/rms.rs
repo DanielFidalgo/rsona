@@ -33,13 +33,13 @@ pub fn rms(frames: &Frames) -> Rms {
     let values = if n_frames > 10 {
         (0..n_frames)
             .into_par_iter()
-            .map(|t| {
-                let start = t * frame_size;
+            .map(|frame_index| {
+                let start = frame_index * frame_size;
                 let end = start + frame_size;
                 let frame_data = &data[start..end];
 
                 // Compute sum of squares using optimized iteration
-                let sum_squares: f32 = frame_data.iter().map(|&x| x * x).sum();
+                let sum_squares: f32 = frame_data.iter().map(|&sample| sample * sample).sum();
 
                 // RMS = sqrt(mean(x^2))
                 (sum_squares * inv_frame_size).sqrt()
@@ -48,12 +48,12 @@ pub fn rms(frames: &Frames) -> Rms {
     } else {
         // Sequential for small frame counts to avoid threading overhead
         (0..n_frames)
-            .map(|t| {
-                let start = t * frame_size;
+            .map(|frame_index| {
+                let start = frame_index * frame_size;
                 let end = start + frame_size;
                 let frame_data = &data[start..end];
 
-                let sum_squares: f32 = frame_data.iter().map(|&x| x * x).sum();
+                let sum_squares: f32 = frame_data.iter().map(|&sample| sample * sample).sum();
                 (sum_squares * inv_frame_size).sqrt()
             })
             .collect()
@@ -87,16 +87,16 @@ pub fn rms_from_spectrogram(spec: &Spectrogram) -> Rms {
     let values = if n_frames > 10 {
         (0..n_frames)
             .into_par_iter()
-            .map(|t| {
-                let frame = spec.frame(t).expect("frame index out of bounds");
+            .map(|frame_index| {
+                let frame = spec.frame(frame_index).expect("frame index out of bounds");
                 compute_rms_from_frame(frame, n_bins, is_even_fft, norm_factor)
             })
             .collect()
     } else {
         // Sequential for small frame counts
         (0..n_frames)
-            .map(|t| {
-                let frame = spec.frame(t).expect("frame index out of bounds");
+            .map(|frame_index| {
+                let frame = spec.frame(frame_index).expect("frame index out of bounds");
                 compute_rms_from_frame(frame, n_bins, is_even_fft, norm_factor)
             })
             .collect()
@@ -121,8 +121,8 @@ fn compute_rms_from_frame(
 
     // Process middle bins (full power)
     let end = if is_even_fft { n_bins - 1 } else { n_bins };
-    for b in 1..end {
-        let mag = frame[b].norm();
+    for bin_idx in 1..end {
+        let mag = frame[bin_idx].norm();
         sum_power += mag * mag;
     }
 

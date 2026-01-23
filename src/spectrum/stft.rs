@@ -171,29 +171,30 @@ pub fn stft(frames: &Frames, config: StftConfig) -> Result<Spectrogram, Spectrum
 
     // Output: contiguous frames × bins.
     // Pre-allocate full output buffer to avoid per-frame allocations
-    let mut out = vec![Complex::<f32>::new(0.0, 0.0); n_frames * n_bins];
+    let mut spectrogram_data = vec![Complex::<f32>::new(0.0, 0.0); n_frames * n_bins];
 
     // Parallelize FFT computation across frames using thread-local cached planners
     if n_frames > 10 {
         // Parallel path - write directly to pre-allocated buffer
-        out.par_chunks_mut(n_bins)
+        spectrogram_data
+            .par_chunks_mut(n_bins)
             .enumerate()
-            .for_each(|(t, out_row)| {
+            .for_each(|(frame_index, output_frame)| {
                 let frame = frames
-                    .frame(t)
-                    .expect("Frames reported n_frames but frame(t) returned None");
+                    .frame(frame_index)
+                    .expect("Frames reported n_frames but frame(frame_index) returned None");
 
                 // Use thread-local cache for FFT planner and buffer
                 FFT_CACHE.with(|cache| {
                     let mut cache = cache.borrow_mut();
 
                     // Get or create FFT planner and buffer for this n_fft size
-                    let (fft, buf) = cache.entry(n_fft).or_insert_with(|| {
+                    let (fft, fft_buffer) = cache.entry(n_fft).or_insert_with(|| {
                         let mut planner = FftPlanner::<f32>::new();
                         let fft = planner.plan_fft_forward(n_fft);
                         // Allocate buffer (will be filled on first use)
-                        let buf = vec![Complex::<f32>::new(0.0, 0.0); n_fft];
-                        (fft, buf)
+                        let fft_buffer = vec![Complex::<f32>::new(0.0, 0.0); n_fft];
+                        (fft, fft_buffer)
                     });
 
                     let copy_len = frame_size.min(n_fft);
@@ -205,30 +206,30 @@ pub fn stft(frames: &Frames, config: StftConfig) -> Result<Spectrogram, Spectrum
 
                     for chunk_idx in 0..main_chunks {
                         let base = chunk_idx * CHUNK;
-                        buf[base] = Complex::new(frame[base], 0.0);
-                        buf[base + 1] = Complex::new(frame[base + 1], 0.0);
-                        buf[base + 2] = Complex::new(frame[base + 2], 0.0);
-                        buf[base + 3] = Complex::new(frame[base + 3], 0.0);
-                        buf[base + 4] = Complex::new(frame[base + 4], 0.0);
-                        buf[base + 5] = Complex::new(frame[base + 5], 0.0);
-                        buf[base + 6] = Complex::new(frame[base + 6], 0.0);
-                        buf[base + 7] = Complex::new(frame[base + 7], 0.0);
+                        fft_buffer[base] = Complex::new(frame[base], 0.0);
+                        fft_buffer[base + 1] = Complex::new(frame[base + 1], 0.0);
+                        fft_buffer[base + 2] = Complex::new(frame[base + 2], 0.0);
+                        fft_buffer[base + 3] = Complex::new(frame[base + 3], 0.0);
+                        fft_buffer[base + 4] = Complex::new(frame[base + 4], 0.0);
+                        fft_buffer[base + 5] = Complex::new(frame[base + 5], 0.0);
+                        fft_buffer[base + 6] = Complex::new(frame[base + 6], 0.0);
+                        fft_buffer[base + 7] = Complex::new(frame[base + 7], 0.0);
                     }
 
                     for i in (main_chunks * CHUNK)..copy_len {
-                        buf[i] = Complex::new(frame[i], 0.0);
+                        fft_buffer[i] = Complex::new(frame[i], 0.0);
                     }
 
                     // Zero-pad remainder if needed (efficiently)
                     if copy_len < n_fft {
-                        buf[copy_len..n_fft].fill(Complex::new(0.0, 0.0));
+                        fft_buffer[copy_len..n_fft].fill(Complex::new(0.0, 0.0));
                     }
 
                     // FFT in place
-                    fft.process(buf);
+                    fft.process(fft_buffer);
 
                     // Copy one-sided bins to output
-                    out_row.copy_from_slice(&buf[..n_bins]);
+                    output_frame.copy_from_slice(&fft_buffer[..n_bins]);
                 });
             });
     } else {
@@ -236,12 +237,12 @@ pub fn stft(frames: &Frames, config: StftConfig) -> Result<Spectrogram, Spectrum
         let mut planner = FftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(n_fft);
         // Allocate FFT buffer (will be filled each iteration)
-        let mut buf = vec![Complex::<f32>::new(0.0, 0.0); n_fft];
+        let mut fft_buffer = vec![Complex::<f32>::new(0.0, 0.0); n_fft];
 
-        for t in 0..n_frames {
+        for frame_index in 0..n_frames {
             let frame = frames
-                .frame(t)
-                .expect("Frames reported n_frames but frame(t) returned None");
+                .frame(frame_index)
+                .expect("Frames reported n_frames but frame(frame_index) returned None");
 
             let copy_len = frame_size.min(n_fft);
 
@@ -252,31 +253,32 @@ pub fn stft(frames: &Frames, config: StftConfig) -> Result<Spectrogram, Spectrum
 
             for chunk_idx in 0..main_chunks {
                 let base = chunk_idx * CHUNK;
-                buf[base] = Complex::new(frame[base], 0.0);
-                buf[base + 1] = Complex::new(frame[base + 1], 0.0);
-                buf[base + 2] = Complex::new(frame[base + 2], 0.0);
-                buf[base + 3] = Complex::new(frame[base + 3], 0.0);
-                buf[base + 4] = Complex::new(frame[base + 4], 0.0);
-                buf[base + 5] = Complex::new(frame[base + 5], 0.0);
-                buf[base + 6] = Complex::new(frame[base + 6], 0.0);
-                buf[base + 7] = Complex::new(frame[base + 7], 0.0);
+                fft_buffer[base] = Complex::new(frame[base], 0.0);
+                fft_buffer[base + 1] = Complex::new(frame[base + 1], 0.0);
+                fft_buffer[base + 2] = Complex::new(frame[base + 2], 0.0);
+                fft_buffer[base + 3] = Complex::new(frame[base + 3], 0.0);
+                fft_buffer[base + 4] = Complex::new(frame[base + 4], 0.0);
+                fft_buffer[base + 5] = Complex::new(frame[base + 5], 0.0);
+                fft_buffer[base + 6] = Complex::new(frame[base + 6], 0.0);
+                fft_buffer[base + 7] = Complex::new(frame[base + 7], 0.0);
             }
 
             for i in (main_chunks * CHUNK)..copy_len {
-                buf[i] = Complex::new(frame[i], 0.0);
+                fft_buffer[i] = Complex::new(frame[i], 0.0);
             }
 
             // Zero-pad remainder if needed (efficiently)
             if copy_len < n_fft {
-                buf[copy_len..n_fft].fill(Complex::new(0.0, 0.0));
+                fft_buffer[copy_len..n_fft].fill(Complex::new(0.0, 0.0));
             }
 
             // FFT in place.
-            fft.process(&mut buf);
+            fft.process(&mut fft_buffer);
 
             // Store one-sided bins.
-            let row = &mut out[t * n_bins..(t + 1) * n_bins];
-            row.copy_from_slice(&buf[..n_bins]);
+            let output_frame =
+                &mut spectrogram_data[frame_index * n_bins..(frame_index + 1) * n_bins];
+            output_frame.copy_from_slice(&fft_buffer[..n_bins]);
         }
     }
 
@@ -286,7 +288,7 @@ pub fn stft(frames: &Frames, config: StftConfig) -> Result<Spectrogram, Spectrum
         hop_size,
         n_frames,
         n_bins,
-        data: out,
+        data: spectrogram_data,
     })
 }
 

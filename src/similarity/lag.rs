@@ -104,8 +104,8 @@ pub struct RepeatLagEstimate {
 ///
 /// For lag L: aggregate values S[i, i+L] for i in 0..n-L.
 pub fn diagonal_lag_energy(ssm: &SelfSimilarity, cfg: LagEnergyConfig) -> LagEnergy {
-    let n = ssm.n_frames();
-    if n == 0 {
+    let num_frames = ssm.n_frames();
+    if num_frames == 0 {
         return LagEnergy {
             min_lag: cfg.min_lag,
             max_lag: cfg.max_lag,
@@ -113,8 +113,8 @@ pub fn diagonal_lag_energy(ssm: &SelfSimilarity, cfg: LagEnergyConfig) -> LagEne
         };
     }
 
-    let min_lag = cfg.min_lag.min(n.saturating_sub(1));
-    let max_lag = cfg.max_lag.min(n.saturating_sub(1));
+    let min_lag = cfg.min_lag.min(num_frames.saturating_sub(1));
+    let max_lag = cfg.max_lag.min(num_frames.saturating_sub(1));
     if max_lag < min_lag {
         return LagEnergy {
             min_lag,
@@ -128,8 +128,8 @@ pub fn diagonal_lag_energy(ssm: &SelfSimilarity, cfg: LagEnergyConfig) -> LagEne
         let mut sum = 0.0f64;
         let mut cnt = 0u64;
         for lag in min_lag..=max_lag {
-            for i in 0..(n - lag) {
-                sum += ssm.value(i, i + lag) as f64;
+            for frame_idx in 0..(num_frames - lag) {
+                sum += ssm.value(frame_idx, frame_idx + lag) as f64;
                 cnt += 1;
             }
         }
@@ -151,27 +151,27 @@ pub fn diagonal_lag_energy(ssm: &SelfSimilarity, cfg: LagEnergyConfig) -> LagEne
         };
         let mut cnt = 0u64;
 
-        for i in 0..(n - lag) {
-            let mut v = ssm.value(i, i + lag) - global_mean;
+        for frame_idx in 0..(num_frames - lag) {
+            let mut value = ssm.value(frame_idx, frame_idx + lag) - global_mean;
             // after mean-centering, negatives can happen; clamp for stability
-            if v < 0.0 {
-                v = 0.0;
+            if value < 0.0 {
+                value = 0.0;
             }
 
             match cfg.aggregation {
                 LagAggregation::Mean | LagAggregation::Sum => {
-                    acc += v as f64;
+                    acc += value as f64;
                     cnt += 1;
                 }
                 LagAggregation::Max => {
-                    if (v as f64) > acc {
-                        acc = v as f64;
+                    if (value as f64) > acc {
+                        acc = value as f64;
                     }
                 }
             }
         }
 
-        let e = match cfg.aggregation {
+        let energy_value = match cfg.aggregation {
             LagAggregation::Sum => acc as f32,
             LagAggregation::Mean => {
                 if cnt > 0 {
@@ -189,14 +189,14 @@ pub fn diagonal_lag_energy(ssm: &SelfSimilarity, cfg: LagEnergyConfig) -> LagEne
             }
         };
 
-        energy.push(e);
+        energy.push(energy_value);
     }
 
-    if let Some(win) = cfg.smooth_lags
-        && win > 1
+    if let Some(window_size) = cfg.smooth_lags
+        && window_size > 1
         && !energy.is_empty()
     {
-        energy = moving_average(&energy, win);
+        energy = moving_average(&energy, window_size);
     }
 
     LagEnergy {
@@ -236,21 +236,21 @@ pub fn estimate_repeat_lag(
     })
 }
 
-fn moving_average(x: &[f32], win: usize) -> Vec<f32> {
-    let n = x.len();
-    if win <= 1 || n == 0 {
+fn moving_average(x: &[f32], window_size: usize) -> Vec<f32> {
+    let num_samples = x.len();
+    if window_size <= 1 || num_samples == 0 {
         return x.to_vec();
     }
-    let half = win / 2;
-    let mut out = vec![0.0f32; n];
+    let half = window_size / 2;
+    let mut out = vec![0.0f32; num_samples];
 
-    for i in 0..n {
+    for i in 0..num_samples {
         let start = i.saturating_sub(half);
-        let end = (i + half + 1).min(n);
+        let end = (i + half + 1).min(num_samples);
 
         let mut sum = 0.0f32;
-        for v in &x[start..end] {
-            sum += *v;
+        for value in &x[start..end] {
+            sum += *value;
         }
         out[i] = sum / (end - start) as f32;
     }
@@ -303,33 +303,33 @@ pub fn best_repeat_phase(
     lag: usize,
     cfg: RepeatPhaseConfig,
 ) -> Option<RepeatPhaseEstimate> {
-    let n = ssm.n_frames();
-    if lag == 0 || lag >= n {
+    let num_frames = ssm.n_frames();
+    if lag == 0 || lag >= num_frames {
         return None;
     }
 
     let window = cfg.window.max(1);
-    let max_start = n.saturating_sub(lag + window);
+    let max_start = num_frames.saturating_sub(lag + window);
     if max_start == 0 {
         return None;
     }
 
     let mut scores = vec![0.0f32; max_start + 1];
 
-    for i in 0..=max_start {
+    for frame_idx in 0..=max_start {
         let mut acc = 0.0f64;
         let mut cnt = 0u64;
 
-        for k in 0..window {
-            let a = i + k;
-            let b = a + lag;
-            if b < n {
-                acc += ssm.value(a, b) as f64;
+        for offset in 0..window {
+            let frame_a = frame_idx + offset;
+            let frame_b = frame_a + lag;
+            if frame_b < num_frames {
+                acc += ssm.value(frame_a, frame_b) as f64;
                 cnt += 1;
             }
         }
 
-        scores[i] = if cnt > 0 {
+        scores[frame_idx] = if cnt > 0 {
             (acc / cnt as f64) as f32
         } else {
             0.0
@@ -337,9 +337,9 @@ pub fn best_repeat_phase(
     }
 
     // Optional smoothing over phase axis
-    let scores = if let Some(win) = cfg.smooth {
-        if win > 1 {
-            moving_average(&scores, win)
+    let scores = if let Some(window_size) = cfg.smooth {
+        if window_size > 1 {
+            moving_average(&scores, window_size)
         } else {
             scores
         }

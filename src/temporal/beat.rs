@@ -45,8 +45,8 @@ pub fn track_beats(
     period_frames: usize,
     cfg: BeatConfig,
 ) -> BeatTrack {
-    let n = onset_env.len();
-    if n == 0 || period_frames == 0 {
+    let num_frames = onset_env.len();
+    if num_frames == 0 || period_frames == 0 {
         return BeatTrack {
             beat_frames: Vec::new(),
             beat_times: Vec::new(),
@@ -59,10 +59,10 @@ pub fn track_beats(
 
     // 2) Generate beat grid
     let mut beats = Vec::new();
-    let mut t = phase_offset;
-    while t < n {
-        beats.push(t);
-        t += period_frames;
+    let mut beat_position = phase_offset;
+    while beat_position < num_frames {
+        beats.push(beat_position);
+        beat_position += period_frames;
     }
 
     // 3) Optional snapping
@@ -70,10 +70,11 @@ pub fn track_beats(
         let max_onset = onset_env.iter().cloned().fold(0.0f32, f32::max);
         let min_thresh = max_onset * cfg.snap_min_rel;
 
-        for b in &mut beats {
-            if let Some(snapped) = snap_local_max(onset_env, *b, cfg.snap_radius_frames, min_thresh)
+        for beat in &mut beats {
+            if let Some(snapped) =
+                snap_local_max(onset_env, *beat, cfg.snap_radius_frames, min_thresh)
             {
-                *b = snapped;
+                *beat = snapped;
             }
         }
 
@@ -83,9 +84,12 @@ pub fn track_beats(
     }
 
     // 4) Convert to times
-    let sr = sample_rate as f64;
+    let sample_rate_f64 = sample_rate as f64;
     let hop = hop_size as f64;
-    let beat_times: Vec<f64> = beats.iter().map(|&f| (f as f64 * hop) / sr).collect();
+    let beat_times: Vec<f64> = beats
+        .iter()
+        .map(|&f| (f as f64 * hop) / sample_rate_f64)
+        .collect();
 
     BeatTrack {
         beat_frames: beats,
@@ -95,16 +99,16 @@ pub fn track_beats(
 }
 
 fn best_phase(env: &[f32], period: usize) -> usize {
-    let n = env.len();
+    let num_frames = env.len();
     let mut best_offset = 0usize;
     let mut best_score = f32::NEG_INFINITY;
 
-    for offset in 0..period.min(n) {
+    for offset in 0..period.min(num_frames) {
         let mut sum = 0.0f32;
-        let mut t = offset;
-        while t < n {
-            sum += env[t];
-            t += period;
+        let mut beat_position = offset;
+        while beat_position < num_frames {
+            sum += env[beat_position];
+            beat_position += period;
         }
         if sum > best_score {
             best_score = sum;
@@ -117,26 +121,30 @@ fn best_phase(env: &[f32], period: usize) -> usize {
 
 /// Snap to nearest local maximum within +/- radius where env >= min_thresh.
 fn snap_local_max(env: &[f32], idx: usize, radius: usize, min_thresh: f32) -> Option<usize> {
-    let n = env.len();
-    if n == 0 {
+    let num_frames = env.len();
+    if num_frames == 0 {
         return None;
     }
     let start = idx.saturating_sub(radius);
-    let end = (idx + radius + 1).min(n);
+    let end = (idx + radius + 1).min(num_frames);
 
     let mut best: Option<(usize, f32)> = None; // (index, value)
 
     for i in start..end {
-        let v = env[i];
-        if v < min_thresh {
+        let value = env[i];
+        if value < min_thresh {
             continue;
         }
-        let left = if i == 0 { v } else { env[i - 1] };
-        let right = if i + 1 >= n { v } else { env[i + 1] };
-        if v >= left && v >= right {
+        let left = if i == 0 { value } else { env[i - 1] };
+        let right = if i + 1 >= num_frames {
+            value
+        } else {
+            env[i + 1]
+        };
+        if value >= left && value >= right {
             match best {
-                None => best = Some((i, v)),
-                Some((_, best_v)) if v > best_v => best = Some((i, v)),
+                None => best = Some((i, value)),
+                Some((_, best_v)) if value > best_v => best = Some((i, value)),
                 _ => {}
             }
         }

@@ -82,175 +82,176 @@ impl NoveltyCurve {
 /// Checkerboard sign:
 ///   (+) for UL and LR quadrants, (-) for UR and LL.
 pub fn novelty_curve(ssm: &SelfSimilarity, cfg: NoveltyConfig) -> NoveltyCurve {
-    let n = ssm.n_frames();
-    let w = match cfg.window {
-        KernelWindow::Frames(w) => w.max(1),
+    let num_frames = ssm.n_frames();
+    let half_width = match cfg.window {
+        KernelWindow::Frames(half_width) => half_width.max(1),
     };
 
-    // Precompute weights and signs for kernel (2w x 2w) with center between quadrants.
-    let size = 2 * w;
-    let weights = build_weights(size, w, cfg.gaussian, cfg.gaussian_sigma_frac);
-    let signs = build_checkerboard_signs(size, w);
+    // Precompute weights and signs for kernel (2*half_width x 2*half_width) with center between quadrants.
+    let size = 2 * half_width;
+    let weights = build_weights(size, half_width, cfg.gaussian, cfg.gaussian_sigma_frac);
+    let signs = build_checkerboard_signs(size, half_width);
 
     // Parallelize novelty computation for better performance on large matrices
-    let mut out: Vec<f32> = if n > 100 {
+    let mut out: Vec<f32> = if num_frames > 100 {
         // Parallel path for large matrices
-        (0..n)
+        (0..num_frames)
             .into_par_iter()
-            .map(|k| {
-                // kernel block spans rows [k-w, k+w) and cols [k-w, k+w)
-                let r0 = k.saturating_sub(w);
-                let c0 = k.saturating_sub(w);
-                let r1 = (k + w).min(n);
-                let c1 = (k + w).min(n);
+            .map(|frame_idx| {
+                // kernel block spans rows [frame_idx-half_width, frame_idx+half_width) and cols [frame_idx-half_width, frame_idx+half_width)
+                let row_start = frame_idx.saturating_sub(half_width);
+                let col_start = frame_idx.saturating_sub(half_width);
+                let row_end = (frame_idx + half_width).min(num_frames);
+                let col_end = (frame_idx + half_width).min(num_frames);
 
-                let mut acc = 0.0f32;
+                let mut accumulator = 0.0f32;
                 let mut energy = 0.0f32;
 
-                for (rr, r) in (r0..r1).enumerate() {
-                    for (cc, c) in (c0..c1).enumerate() {
+                for (row_offset, row) in (row_start..row_end).enumerate() {
+                    for (col_offset, col) in (col_start..col_end).enumerate() {
                         // band gate if needed
                         if let Some(band) = cfg.band {
-                            let dist = r.abs_diff(c);
+                            let dist = row.abs_diff(col);
                             if dist > band {
                                 continue;
                             }
                         }
 
-                        let s = ssm.value(r, c);
-                        let wgt = weights[rr * size + cc];
-                        let sgn = signs[rr * size + cc];
+                        let similarity = ssm.value(row, col);
+                        let weight = weights[row_offset * size + col_offset];
+                        let sign = signs[row_offset * size + col_offset];
 
-                        acc += s * wgt * sgn;
+                        accumulator += similarity * weight * sign;
                         if cfg.normalize {
-                            energy += wgt * wgt;
+                            energy += weight * weight;
                         }
                     }
                 }
 
                 if cfg.normalize && energy > 1e-12 {
-                    acc /= energy.sqrt();
+                    accumulator /= energy.sqrt();
                 }
 
                 // Novelty should be non-negative for boundary strength;
                 // taking abs is standard because sign depends on direction.
-                acc.abs()
+                accumulator.abs()
             })
             .collect()
     } else {
         // Sequential path for small matrices to avoid parallelization overhead
-        let mut out = vec![0.0f32; n];
+        let mut out = vec![0.0f32; num_frames];
 
-        for k in 0..n {
-            // kernel block spans rows [k-w, k+w) and cols [k-w, k+w)
-            let r0 = k.saturating_sub(w);
-            let c0 = k.saturating_sub(w);
-            let r1 = (k + w).min(n);
-            let c1 = (k + w).min(n);
+        for frame_idx in 0..num_frames {
+            // kernel block spans rows [frame_idx-half_width, frame_idx+half_width) and cols [frame_idx-half_width, frame_idx+half_width)
+            let row_start = frame_idx.saturating_sub(half_width);
+            let col_start = frame_idx.saturating_sub(half_width);
+            let row_end = (frame_idx + half_width).min(num_frames);
+            let col_end = (frame_idx + half_width).min(num_frames);
 
-            let mut acc = 0.0f32;
+            let mut accumulator = 0.0f32;
             let mut energy = 0.0f32;
 
-            for (rr, r) in (r0..r1).enumerate() {
-                for (cc, c) in (c0..c1).enumerate() {
+            for (row_offset, row) in (row_start..row_end).enumerate() {
+                for (col_offset, col) in (col_start..col_end).enumerate() {
                     // band gate if needed
                     if let Some(band) = cfg.band {
-                        let dist = r.abs_diff(c);
+                        let dist = row.abs_diff(col);
                         if dist > band {
                             continue;
                         }
                     }
 
-                    let s = ssm.value(r, c);
-                    let wgt = weights[rr * size + cc];
-                    let sgn = signs[rr * size + cc];
+                    let similarity = ssm.value(row, col);
+                    let weight = weights[row_offset * size + col_offset];
+                    let sign = signs[row_offset * size + col_offset];
 
-                    acc += s * wgt * sgn;
+                    accumulator += similarity * weight * sign;
                     if cfg.normalize {
-                        energy += wgt * wgt;
+                        energy += weight * weight;
                     }
                 }
             }
 
             if cfg.normalize && energy > 1e-12 {
-                acc /= energy.sqrt();
+                accumulator /= energy.sqrt();
             }
 
             // Novelty should be non-negative for boundary strength;
             // taking abs is standard because sign depends on direction.
-            out[k] = acc.abs();
+            out[frame_idx] = accumulator.abs();
         }
 
         out
     };
 
-    if let Some(win) = cfg.smooth
-        && win > 1
+    if let Some(window_size) = cfg.smooth
+        && window_size > 1
     {
-        out = moving_average(&out, win);
+        out = moving_average(&out, window_size);
     }
 
     NoveltyCurve {
-        n_frames: n,
+        n_frames: num_frames,
         values: out,
     }
 }
 
-fn build_checkerboard_signs(size: usize, w: usize) -> Vec<f32> {
-    let mut s = vec![0.0f32; size * size];
-    for r in 0..size {
-        for c in 0..size {
-            // quadrants relative to w
-            let top = r < w;
-            let left = c < w;
+fn build_checkerboard_signs(size: usize, half_width: usize) -> Vec<f32> {
+    let mut signs = vec![0.0f32; size * size];
+    for row in 0..size {
+        for col in 0..size {
+            // quadrants relative to half_width
+            let top = row < half_width;
+            let left = col < half_width;
             let sign = match (top, left) {
                 (true, true) => 1.0,   // UL
                 (false, false) => 1.0, // LR
                 (true, false) => -1.0, // UR
                 (false, true) => -1.0, // LL
             };
-            s[r * size + c] = sign;
+            signs[row * size + col] = sign;
         }
     }
-    s
+    signs
 }
 
-fn build_weights(size: usize, w: usize, gaussian: bool, sigma_frac: f32) -> Vec<f32> {
-    let mut out = vec![1.0f32; size * size];
+fn build_weights(size: usize, half_width: usize, gaussian: bool, sigma_frac: f32) -> Vec<f32> {
+    let mut weights = vec![1.0f32; size * size];
     if !gaussian {
-        return out;
+        return weights;
     }
 
-    let sigma = (w as f32 * sigma_frac).max(1e-6);
-    // center at kernel midpoint (w-0.5), but we can approximate by w as int center
-    let cx = (size as f32 - 1.0) / 2.0;
-    let cy = cx;
+    let sigma = (half_width as f32 * sigma_frac).max(1e-6);
+    // center at kernel midpoint (half_width-0.5), but we can approximate by half_width as int center
+    let center_x = (size as f32 - 1.0) / 2.0;
+    let center_y = center_x;
 
-    for r in 0..size {
-        for c in 0..size {
-            let dx = r as f32 - cx;
-            let dy = c as f32 - cy;
-            let g = (-0.5 * (dx * dx + dy * dy) / (sigma * sigma)).exp();
-            out[r * size + c] = g;
+    for row in 0..size {
+        for col in 0..size {
+            let delta_x = row as f32 - center_x;
+            let delta_y = col as f32 - center_y;
+            let gaussian_weight =
+                (-0.5 * (delta_x * delta_x + delta_y * delta_y) / (sigma * sigma)).exp();
+            weights[row * size + col] = gaussian_weight;
         }
     }
-    out
+    weights
 }
 
-fn moving_average(x: &[f32], win: usize) -> Vec<f32> {
-    let n = x.len();
-    if win <= 1 || n == 0 {
+fn moving_average(x: &[f32], window_size: usize) -> Vec<f32> {
+    let num_samples = x.len();
+    if window_size <= 1 || num_samples == 0 {
         return x.to_vec();
     }
-    let half = win / 2;
+    let half = window_size / 2;
 
     // Parallelize for large arrays
-    if n > 1000 {
-        (0..n)
+    if num_samples > 1000 {
+        (0..num_samples)
             .into_par_iter()
             .map(|i| {
                 let start = i.saturating_sub(half);
-                let end = (i + half + 1).min(n);
+                let end = (i + half + 1).min(num_samples);
 
                 let sum: f32 = x[start..end].iter().sum();
                 sum / (end - start) as f32
@@ -258,11 +259,11 @@ fn moving_average(x: &[f32], win: usize) -> Vec<f32> {
             .collect()
     } else {
         // Sequential path for small arrays
-        let mut out = vec![0.0f32; n];
+        let mut out = vec![0.0f32; num_samples];
 
-        for i in 0..n {
+        for i in 0..num_samples {
             let start = i.saturating_sub(half);
-            let end = (i + half + 1).min(n);
+            let end = (i + half + 1).min(num_samples);
 
             let sum: f32 = x[start..end].iter().sum();
             out[i] = sum / (end - start) as f32;
