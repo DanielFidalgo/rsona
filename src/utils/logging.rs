@@ -14,7 +14,7 @@
 //!     logging::init();
 //!
 //!     // Or initialize with a specific level
-//!     logging::init_with_level(logging::Level::Debug);
+//!     logging::init_with_level(logging::Level::DEBUG);
 //! }
 //! ```
 //!
@@ -65,10 +65,9 @@ pub fn init() {
 ///
 /// ```no_run
 /// use rsona::utils::logging;
-/// use tracing::Level;
 ///
 /// fn main() {
-///     logging::init_with_level(Level::DEBUG);
+///     logging::init_with_level(tracing::Level::DEBUG);
 ///     tracing::debug!("This will show");
 /// }
 /// ```
