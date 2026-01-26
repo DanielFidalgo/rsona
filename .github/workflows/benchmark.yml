@@ -18,47 +18,121 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - name: Install Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install librosa numpy
+
       - name: Find latest tag
         id: tag
         run: |
-          TAG=$(git describe --tags --abbrev=0 || echo "")
+          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           echo "tag=$TAG" >> $GITHUB_OUTPUT
+          if [ -n "$TAG" ]; then
+            echo "Found tag: $TAG"
+          else
+            echo "No tags found, skipping baseline comparison"
+          fi
+
+      - name: Check audio file exists
+        run: |
+          if [ ! -f "bench/audio/edm_loop.wav" ]; then
+            echo "Error: bench/audio/edm_loop.wav not found"
+            exit 1
+          fi
 
       - name: Build bench (current)
-        run: cargo build --release --bin rsona_bench
+        run: |
+          RUSTFLAGS="-C target-cpu=native" cargo build --release --bin rsona_bench
+          cp target/release/rsona_bench rsona_bench_current
 
       - name: Run bench (current)
         run: |
-          ./target/release/rsona_bench bench/audio/edm_loop.wav > curr.json
+          ./rsona_bench_current bench/audio/edm_loop.wav > curr.json
+          echo "Current benchmark results:"
+          cat curr.json
 
       - name: Checkout previous release
         if: steps.tag.outputs.tag != ''
         run: |
+          git stash
           git checkout ${{ steps.tag.outputs.tag }}
 
-      - name: Build bench (base)
+      - name: Check if audio file exists in tag
         if: steps.tag.outputs.tag != ''
-        run: cargo build --release --bin rsona_bench
+        id: check_audio
+        run: |
+          if [ -f "bench/audio/edm_loop.wav" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Warning: Audio file not found in tag ${{ steps.tag.outputs.tag }}"
+          fi
+
+      - name: Build bench (base)
+        if: steps.tag.outputs.tag != '' && steps.check_audio.outputs.exists == 'true'
+        run: |
+          cargo clean
+          RUSTFLAGS="-C target-cpu=native" cargo build --release --bin rsona_bench
+          cp target/release/rsona_bench rsona_bench_base
 
       - name: Run bench (base)
-        if: steps.tag.outputs.tag != ''
+        if: steps.tag.outputs.tag != '' && steps.check_audio.outputs.exists == 'true'
         run: |
-          ./target/release/rsona_bench bench/audio/edm_loop.wav > base.json
+          ./rsona_bench_base bench/audio/edm_loop.wav > base.json
+          echo "Baseline benchmark results:"
+          cat base.json
 
       - name: Compare results
-        if: steps.tag.outputs.tag != ''
+        if: steps.tag.outputs.tag != '' && steps.check_audio.outputs.exists == 'true'
         run: |
-          python bench/compare.py base.json curr.json
+          if [ -f "bench/compare.py" ]; then
+            python bench/compare.py base.json curr.json
+          else
+            echo "Warning: bench/compare.py not found, showing raw comparison"
+            echo "=== Base Results ==="
+            cat base.json
+            echo "=== Current Results ==="
+            cat curr.json
+          fi
 
-      - name: Upload results
+      - name: Upload current results
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
+          path: curr.json
+
+      - name: Upload comparison results
+        if: steps.tag.outputs.tag != '' && steps.check_audio.outputs.exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-comparison
           path: |
             curr.json
             base.json

@@ -2893,6 +2893,8 @@ dependencies = [
  "serde_json",
  "symphonia",
  "thiserror 2.0.17",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::time::Instant;
+use tracing::{debug, error, info};
 
 use rsona::{
     audio,
@@ -8,6 +9,7 @@ use rsona::{
     similarity::{FrameFeatures, LagEnergyConfig, SelfSimilarityConfig, self_similarity},
     spectrum::{MelConfig, StftConfig, mel_spectrogram, stft},
     structure::{SegmentationConfig, segment_intro_loop_outro_with_onsets},
+    utils::logging,
 };
 
 #[derive(Serialize)]
@@ -81,12 +83,19 @@ struct ConfidenceMetrics {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: {} <audio_path> [--detailed]", args[0]);
+        error!("Usage: {} <audio_path> [--detailed]", args[0]);
         std::process::exit(1);
     }
 
     let audio_path = &args[1];
     let detailed = args.iter().any(|arg| arg == "--detailed");
+
+    // Initialize logging based on detailed flag
+    if detailed {
+        logging::init_verbose();
+    } else {
+        logging::init();
+    }
 
     let total_start = Instant::now();
 
@@ -99,8 +108,8 @@ fn main() {
     let n_samples = buffer.samples.len();
 
     if detailed {
-        eprintln!("Loaded: {} samples @ {} Hz", n_samples, buffer.sample_rate);
-        eprintln!("Duration: {:.2}s", duration_seconds);
+        info!("Loaded: {} samples @ {} Hz", n_samples, buffer.sample_rate);
+        info!("Duration: {:.2}s", duration_seconds);
     }
 
     // --- Frame ---
@@ -121,7 +130,7 @@ fn main() {
     let n_frames = frames.n_frames();
 
     if detailed {
-        eprintln!("Frames: {}", n_frames);
+        info!("Frames: {}", n_frames);
     }
 
     // --- STFT ---
@@ -140,7 +149,7 @@ fn main() {
     let mfcc_time = t_mfcc.elapsed();
 
     if detailed {
-        eprintln!(
+        info!(
             "MFCC: {} frames, {} coefficients",
             mfcc_result.n_frames(),
             mfcc_result.n_mfcc()
@@ -155,12 +164,12 @@ fn main() {
     let max_loop_lag = (n_frames * 2 / 3).min(5000).max(800);
 
     if detailed {
-        eprintln!(
+        debug!(
             "Max SSM lag: {} frames (~{:.1}s)",
             max_ssm_lag,
             max_ssm_lag as f64 * hop_size as f64 / frames.sample_rate() as f64
         );
-        eprintln!(
+        debug!(
             "Max loop lag: {} frames (~{:.1}s)",
             max_loop_lag,
             max_loop_lag as f64 * hop_size as f64 / frames.sample_rate() as f64
@@ -185,7 +194,7 @@ fn main() {
     let similarity_time = t_sim.elapsed();
 
     if detailed {
-        eprintln!("SSM: {} x {} frames", ssm.n_frames(), ssm.n_frames());
+        info!("SSM: {} x {} frames", ssm.n_frames(), ssm.n_frames());
     }
 
     // --- Onset Strength ---
@@ -194,7 +203,7 @@ fn main() {
     let onset_time = t_onset.elapsed();
 
     if detailed {
-        eprintln!("Onset envelope: {} frames", onset.values().len());
+        info!("Onset envelope: {} frames", onset.values().len());
     }
 
     // --- Segmentation (Loop Finding) ---
@@ -291,51 +300,51 @@ fn main() {
     println!("{}", json);
 
     if detailed {
-        eprintln!("\n=== Timing Breakdown ===");
-        eprintln!("Load:         {:>8.2} ms", result.timing.load_time_ms);
-        eprintln!("Frame:        {:>8.2} ms", result.timing.frame_time_ms);
-        eprintln!("STFT:         {:>8.2} ms", result.timing.stft_time_ms);
-        eprintln!("Mel:          {:>8.2} ms", result.timing.mel_time_ms);
-        eprintln!("MFCC:         {:>8.2} ms", result.timing.mfcc_time_ms);
-        eprintln!("Similarity:   {:>8.2} ms", result.timing.similarity_time_ms);
-        eprintln!("Onset:        {:>8.2} ms", result.timing.onset_time_ms);
-        eprintln!(
+        info!("\n=== Timing Breakdown ===");
+        info!("Load:         {:>8.2} ms", result.timing.load_time_ms);
+        info!("Frame:        {:>8.2} ms", result.timing.frame_time_ms);
+        info!("STFT:         {:>8.2} ms", result.timing.stft_time_ms);
+        info!("Mel:          {:>8.2} ms", result.timing.mel_time_ms);
+        info!("MFCC:         {:>8.2} ms", result.timing.mfcc_time_ms);
+        info!("Similarity:   {:>8.2} ms", result.timing.similarity_time_ms);
+        info!("Onset:        {:>8.2} ms", result.timing.onset_time_ms);
+        info!(
             "Segmentation: {:>8.2} ms",
             result.timing.segmentation_time_ms
         );
-        eprintln!("---");
-        eprintln!("Total:        {:>8.2} ms", result.timing.total_time_ms);
-        eprintln!();
-        eprintln!("=== Loop Result ===");
-        eprintln!(
+        info!("---");
+        info!("Total:        {:>8.2} ms", result.timing.total_time_ms);
+        info!("");
+        info!("=== Loop Result ===");
+        info!(
             "Intro:  {:.2}s → {:.2}s ({:.2}s)",
             seg_result.intro.start_seconds,
             seg_result.intro.end_seconds,
             result.segmentation.intro_seconds
         );
-        eprintln!(
+        info!(
             "Loop:   {:.2}s → {:.2}s ({:.2}s)",
             result.best_result.loop_begin_seconds,
             result.best_result.loop_end_seconds,
             result.best_result.loop_duration_seconds
         );
-        eprintln!(
+        info!(
             "Outro:  {:.2}s → {:.2}s ({:.2}s)",
             seg_result.outro.start_seconds,
             seg_result.outro.end_seconds,
             result.segmentation.outro_seconds
         );
-        eprintln!();
-        eprintln!(
+        info!("");
+        info!(
             "Loop repeats {} time(s) (period: {:.2}s)",
             result.segmentation.num_loop_repeats,
             result.best_result.loop_duration_seconds / result.segmentation.num_loop_repeats as f64
         );
-        eprintln!();
+        info!("");
         if let Some(conf) = &result.confidence {
-            eprintln!("Confidence: {:.2}", conf.loop_confidence);
+            info!("Confidence: {:.2}", conf.loop_confidence);
             if let Some(bpm) = conf.tempo_bpm {
-                eprintln!("Tempo:      {:.1} BPM", bpm);
+                info!("Tempo:      {:.1} BPM", bpm);
             }
         }
     }

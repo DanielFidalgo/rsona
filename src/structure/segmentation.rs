@@ -5,6 +5,8 @@
 //! - novelty boundaries (section boundaries)
 //! - optional beat grid snapping (from onset envelope)
 
+use tracing::debug;
+
 use crate::signal::Frames;
 use crate::similarity::{
     LagEnergyConfig, RepeatPhaseConfig, SelfSimilarity, best_repeat_phase, estimate_repeat_lag,
@@ -370,8 +372,8 @@ fn find_repetition_end(
     let window_size = (lag / 10).max(5);
 
     #[cfg(debug_assertions)]
-    eprintln!(
-        "[DEBUG] Repetition detection: start_frame={}, lag={}, threshold={:.3}",
+    debug!(
+        "Repetition detection: start_frame={}, lag={}, threshold={:.3}",
         loop_start, lag, min_similarity
     );
 
@@ -380,8 +382,8 @@ fn find_repetition_end(
         let next_end = current_end + lag;
         if next_end > n {
             #[cfg(debug_assertions)]
-            eprintln!(
-                "[DEBUG] Cannot fit another repetition: next_end={} > n={}",
+            debug!(
+                "Cannot fit another repetition: next_end={} > n={}",
                 next_end, n
             );
             break;
@@ -435,8 +437,8 @@ fn find_repetition_end(
     }
 
     #[cfg(debug_assertions)]
-    eprintln!(
-        "[DEBUG] Final result: {} repeat(s), end_frame={}",
+    debug!(
+        "Final result: {} repeat(s), end_frame={}",
         num_repeats, current_end
     );
 
@@ -472,8 +474,8 @@ fn find_best_matching_loop_pair(
     let step = (lag / 100).max(10).min(50);
 
     #[cfg(debug_assertions)]
-    eprintln!(
-        "[DEBUG] Exhaustive search: testing start positions 0..{} (step {})",
+    debug!(
+        "Exhaustive search: testing start positions 0..{} (step {})",
         max_start, step
     );
 
@@ -516,8 +518,8 @@ fn find_best_matching_loop_pair(
     let loop_end = best_start + lag;
 
     #[cfg(debug_assertions)]
-    eprintln!(
-        "[DEBUG] Exhaustive search result: start_frame={}, end_frame={}, score={:.4}",
+    debug!(
+        "Exhaustive search result: start_frame={}, end_frame={}, score={:.4}",
         best_start, loop_end, best_score
     );
 

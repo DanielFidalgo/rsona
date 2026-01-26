@@ -93,6 +93,49 @@ let mfcc = feature::mfcc(&frames, Default::default())?;
 
 
 
+## Logging
+
+rsona uses the `tracing` framework for structured, level-based logging throughout the codebase.
+
+### Quick Start
+
+For examples and binaries:
+
+```rust
+use rsona::utils::logging;
+
+fn main() {
+    logging::init_verbose(); // Shows INFO-level messages
+    
+    // Your code here
+}
+```
+
+### Controlling Log Levels
+
+Use the `RUST_LOG` environment variable to control output:
+
+```bash
+# Show all INFO messages
+RUST_LOG=info cargo run --example mfcc -- audio.wav
+
+# Show DEBUG messages for specific modules
+RUST_LOG=rsona::structure=debug cargo run
+
+# Show everything (very verbose)
+RUST_LOG=trace cargo run
+```
+
+### Log Levels
+
+- `ERROR` - Errors only
+- `WARN` - Warnings (default)
+- `INFO` - General information
+- `DEBUG` - Detailed debugging information
+- `TRACE` - Very verbose execution details
+
+See **[LOGGING.md](LOGGING.md)** for the complete migration guide and best practices.
+
 ## License
 
 Licensed under the Apache License, Version 2.0.
