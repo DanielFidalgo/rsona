@@ -68,10 +68,8 @@ jobs:
           # Generate 15-second test audio with simulated beats (~120 BPM)
           # Two-tone harmony with tremolo creates realistic musical patterns
           sox -n -r 44100 -c 2 test_audio.wav \
-            synth 15 sine 220 tremolo 2 0.5 \
-            synth 15 sine 330 tremolo 2 0.5 mix \
-            fade 0.1 15 0.1 \
-            gain -3
+            synth 15 sine 220 sine 330 \
+            fade 0.1 15 0.1 tremolo 2 50 gain -3
 
           echo "✓ Generated test audio (15s, 44.1kHz, Stereo)"
 

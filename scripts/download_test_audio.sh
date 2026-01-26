@@ -32,10 +32,8 @@ fi
 # - Perfect for testing tempo detection and beat tracking
 # - Fade in/out to avoid clicks
 sox -n -r 44100 -c 2 "$OUTPUT" \
-    synth 15 sine 220 tremolo 2 0.5 \
-    synth 15 sine 330 tremolo 2 0.5 mix \
-    fade 0.1 15 0.1 \
-    gain -3
+    synth 15 sine 220 sine 330 \
+    fade 0.1 15 0.1 tremolo 2 50 gain -3
 
 if [ -f "$OUTPUT" ]; then
     echo ""

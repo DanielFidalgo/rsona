@@ -138,10 +138,8 @@ For benchmarking rsona, use audio with:
 
 # Or generate manually with sox:
 sox -n -r 44100 -c 2 test_audio.wav \
-  synth 15 sine 220 tremolo 2 0.5 \
-  synth 15 sine 330 tremolo 2 0.5 mix \
-  fade 0.1 15 0.1 \
-  gain -3
+  synth 15 sine 220 sine 330 \
+  fade 0.1 15 0.1 tremolo 2 50 gain -3
 ```
 
 ### Or use your own audio:
@@ -200,9 +198,8 @@ sox -n -r 44100 -c 2 noise.wav synth 5 whitenoise
 
 # Musical pattern with beats (like CI uses)
 sox -n -r 44100 -c 2 musical.wav \
-  synth 15 sine 220 tremolo 2 0.5 \
-  synth 15 sine 330 tremolo 2 0.5 mix \
-  fade 0.1 15 0.1 gain -3
+  synth 15 sine 220 sine 330 \
+  fade 0.1 15 0.1 tremolo 2 50 gain -3
 ```
 
 ## Example: Good Test Files
