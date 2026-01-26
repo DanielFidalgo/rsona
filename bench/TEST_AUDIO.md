@@ -13,29 +13,39 @@ We don't commit audio files to the repository because:
 ## CI/CD Workflow
 
 The GitHub Actions workflow (`benchmark.yml`) automatically:
-1. Downloads "Race" by Andrew kn from Freesound (CC-BY 4.0)
-2. Falls back to generated audio if download fails
-3. Caches the audio for subsequent runs
-4. Uses the same audio file for baseline and current comparisons
+1. Generates a consistent test audio file with sox
+2. Caches it for subsequent runs (same audio every time)
+3. Uses the same audio file for baseline and current comparisons
+4. No external dependencies or downloads required
 
-This ensures **reproducible benchmarks** with consistent, real-world music.
+This ensures **reproducible benchmarks** with identical, deterministic audio across all runs.
 
-### Test Track Details
+### CI Test Audio (Generated)
 
-**Current Test Audio:**
+**What CI uses:**
+- **Method:** Generated with sox (no downloads)
+- **Duration:** 15 seconds
+- **Format:** 44.1 kHz, 16-bit, Stereo WAV
+- **Content:** Two-tone harmony (220 Hz + 330 Hz) with tremolo effect
+- **Purpose:** Simulates musical beats (~120 BPM) for tempo detection testing
+- **Advantages:** Instant, reproducible, offline-capable, no licensing concerns
+
+### Optional: Real Music Track (Manual Download)
+
+**For users who want to test with real music:**
 - **Track:** "Race" by Andrew kn (Andrewkn)
 - **Source:** https://freesound.org/people/Andrewkn/sounds/527676/
 - **License:** Creative Commons Attribution 4.0 (CC-BY 4.0)
 - **Duration:** 2:33 (153 seconds)
 - **Format:** 44.1 kHz, 16-bit, Stereo WAV
 - **Type:** Ambient/Atmospheric/Soundscape
-- **Why this track:** Real music content with progressive sound, suitable for testing tempo detection, structure analysis, and spectral features
+- **Download:** Requires manual download from Freesound (requires free account)
 
-See [ATTRIBUTION.md](../ATTRIBUTION.md) for full attribution details.
+See [ATTRIBUTION.md](../ATTRIBUTION.md) for full attribution details if you use this track.
 </text>
 
 <old_text line=22>
-## Primary Approach: Generate with Sox
+## Primary Approach: Generate with Sox (Used by CI)
 
 For **consistent, reproducible benchmarks**, we generate test audio with sox:
 
@@ -212,18 +222,9 @@ sox -n -r 44100 -c 2 musical.wav \
 - Music with varied instrumentation
 - 5-15 seconds duration
 
-## CI/CD Audio Download
+## CI/CD Audio Generation
 
-The CI workflow downloads real music from Freesound:
-
-**Primary (Downloaded):**
-```bash
-# Download "Race" by Andrew kn from Freesound
-curl "https://cdn.freesound.org/previews/527/527676_*-hq.mp3" -o test_audio.mp3
-ffmpeg -i test_audio.mp3 -ar 44100 -ac 2 test_audio.wav
-```
-
-**Fallback (Generated):**
+The CI workflow generates test audio with sox for consistency:
 ```bash
 sox -n -r 44100 -c 2 test_audio.wav \
   synth 15 sine 220 tremolo 2 0.5 \
@@ -232,10 +233,13 @@ sox -n -r 44100 -c 2 test_audio.wav \
 ```
 
 This ensures:
-- **Real-world testing** with actual music
-- **Reproducible benchmarks** - same track cached across runs
-- **Fallback reliability** - generates audio if download fails
-- **Proper attribution** - See ATTRIBUTION.md
+- **Reproducible benchmarks** - identical audio every run
+- **No network dependencies** - works offline
+- **Fast execution** - instant generation vs downloads
+- **Deterministic** - same output every time
+- **No licensing concerns** - generated content
+
+**Note:** Users can manually download real music tracks (like the Freesound track above) for local testing, but CI uses generated audio for consistency.
 
 ## Adding to .gitignore
 

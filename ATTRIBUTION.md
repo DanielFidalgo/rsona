@@ -1,8 +1,14 @@
 # Audio Attribution
 
-This file documents the Creative Commons licensed audio used in rsona's testing and benchmarking.
+This file documents Creative Commons licensed audio that can be used for rsona's testing and benchmarking.
 
-## Test Audio for CI/CD Benchmarks
+## CI/CD Test Audio
+
+**The CI/CD workflow uses generated audio (sox)** - no external downloads or attribution required.
+
+## Optional: Real Music Track for Manual Testing
+
+For users who want to test with real music instead of generated audio, we recommend:
 
 ### "Race" by Andrew kn
 
@@ -16,10 +22,10 @@ This file documents the Creative Commons licensed audio used in rsona's testing 
 **Description:** A progressive ambient track with light and beautiful pad sounds. Perfect for testing music information retrieval features including tempo detection, structure analysis, and spectral features.
 
 **Usage in rsona:**
-- Downloaded automatically in CI/CD workflows (`.github/workflows/benchmark.yml`)
-- Can be downloaded locally with `./scripts/download_test_audio.sh`
-- Used for consistent, reproducible performance benchmarks
-- Not committed to repository (downloaded on-demand and cached)
+- **NOT used in CI/CD** (CI uses generated audio for reproducibility)
+- Available for manual download from Freesound (requires free account)
+- Can be used for local testing with real music
+- Not committed to repository
 
 **License Requirements (CC BY 4.0):**
 - ✅ Attribution provided (this file)
@@ -44,21 +50,27 @@ We chose this track for benchmarking because:
 5. **Proper licensing** - CC-BY 4.0 is compatible with open source
 6. **Atmospheric/ambient** - Tests algorithms on non-percussive music
 
-## Fallback Audio
+## CI/CD Generated Audio
 
-If the Freesound download fails, the workflow generates synthetic test audio using sox:
+The CI/CD workflow uses generated synthetic test audio for consistency:
 - 15-second stereo test tone
-- Two frequencies (220 Hz + 330 Hz) with tremolo
+- Two frequencies (220 Hz + 330 Hz) with tremolo effect
 - Simulates musical beats for tempo detection testing
+- Generated on-demand with sox
 - No attribution needed (generated content)
+- Reproducible and deterministic across all runs
 
 ## License Compliance
 
-This project (rsona) is licensed under Apache 2.0. The CC-BY 4.0 audio is:
+This project (rsona) is licensed under Apache 2.0.
+
+**For CI/CD:** Uses generated audio - no licensing concerns.
+
+**For manual testing with CC-BY 4.0 audio:**
 - ✅ **Compatible** - CC-BY allows commercial use
 - ✅ **Properly attributed** - See above
-- ✅ **Not bundled** - Downloaded separately, not in git
-- ✅ **Clearly documented** - This file serves as attribution
+- ✅ **Not bundled** - Must be downloaded separately, not in git
+- ✅ **Clearly documented** - This file provides attribution
 
 ## Additional Resources
 
@@ -68,11 +80,13 @@ This project (rsona) is licensed under Apache 2.0. The CC-BY 4.0 audio is:
 
 ## Contributing
 
-If you use rsona with different test audio, please:
+If you want to recommend other Creative Commons audio for testing:
 1. Ensure proper licensing (CC0, CC-BY, or similar)
 2. Add attribution to this file
-3. Update scripts to download/generate the audio
+3. Provide download instructions
 4. Verify compatibility with Apache 2.0
+
+**Note:** CI/CD will continue using generated audio for consistency.
 
 ## Questions?
 

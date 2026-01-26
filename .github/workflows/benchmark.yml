@@ -54,54 +54,48 @@ jobs:
         uses: actions/cache@v4
         with:
           path: test_audio.wav
-          key: test-audio-freesound-v1
+          key: test-audio-generated-v1
 
-      - name: Download or generate test audio
+      - name: Generate test audio
         if: steps.cache-audio.outputs.cache-hit != 'true'
         run: |
-          echo "Setting up test audio for benchmarking..."
+          echo "Generating test audio for benchmarking..."
 
-          # Try downloading from Freesound (CC-BY 4.0)
-          # "Race" by Andrew kn (Andrewkn)
-          # https://freesound.org/people/Andrewkn/sounds/527676/
-          # License: Creative Commons Attribution 4.0
+          # Install sox
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sox libsox-fmt-all
 
-          download_success=false
+          # Generate 15-second test audio with simulated beats (~120 BPM)
+          # Two-tone harmony with tremolo creates realistic musical patterns
+          sox -n -r 44100 -c 2 test_audio.wav \
+            synth 15 sine 220 tremolo 2 0.5 \
+            synth 15 sine 330 tremolo 2 0.5 mix \
+            fade 0.1 15 0.1 \
+            gain -3
 
-          # Freesound preview MP3 (HQ preview)
-          echo "Attempting to download from Freesound..."
-          for userid in 10497458 10096348 527676; do
-            if curl -L --max-time 30 --retry 3 \
-              "https://cdn.freesound.org/previews/527/527676_${userid}-hq.mp3" \
-              -o test_audio.mp3 2>/dev/null && [ -s test_audio.mp3 ]; then
-              echo "✓ Downloaded from Freesound"
-              download_success=true
-              break
-            fi
-          done
+          echo "✓ Generated test audio (15s, 44.1kHz, Stereo)"
 
-          # Convert MP3 to WAV if download succeeded
-          if [ "$download_success" = true ]; then
-            echo "Converting to WAV..."
-            sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
-            ffmpeg -i test_audio.mp3 -ar 44100 -ac 2 test_audio.wav -y -loglevel quiet
-            rm test_audio.mp3
-            echo "✓ Audio ready (2:33, 44.1kHz, Stereo)"
-            echo "  Source: 'Race' by Andrew kn (Andrewkn)"
-            echo "  License: CC-BY 4.0"
-            echo "  URL: https://freesound.org/people/Andrewkn/sounds/527676/"
-          else
-            # Fallback: Generate with sox
-            echo "Download failed, generating test audio with sox..."
-            sudo apt-get update -qq && sudo apt-get install -y -qq sox libsox-fmt-all
-            sox -n -r 44100 -c 2 test_audio.wav \
-              synth 15 sine 220 tremolo 2 0.5 \
-              synth 15 sine 330 tremolo 2 0.5 mix \
-              fade 0.1 15 0.1 \
-              gain -3
-            echo "✓ Generated test audio with sox (15s, 44.1kHz, Stereo)"
+          # Verify final file is valid
+          if [ ! -f "test_audio.wav" ]; then
+            echo "Error: test_audio.wav was not created"
+            exit 1
           fi
 
+          # Check it's actually a WAV file
+          file_type=$(file -b test_audio.wav)
+          if ! echo "$file_type" | grep -qi "wave\|wav\|riff"; then
+            echo "Error: test_audio.wav is not a valid WAV file: $file_type"
+            exit 1
+          fi
+
+          # Check file size is reasonable (should be > 1MB)
+          file_size=$(stat -c%s test_audio.wav 2>/dev/null || stat -f%z test_audio.wav 2>/dev/null || echo "0")
+          if [ "$file_size" -lt 100000 ]; then
+            echo "Error: test_audio.wav is too small ($file_size bytes)"
+            exit 1
+          fi
+
+          echo "✓ Test audio validated successfully"
           ls -lh test_audio.wav
 
       - name: Verify audio file exists
