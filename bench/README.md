@@ -5,6 +5,9 @@ This directory contains benchmarking tools to compare rsona's performance agains
 ## Quick Start
 
 ```bash
+# Generate test audio (required for first run)
+../scripts/download_test_audio.sh
+
 # Run full pipeline comparison
 ./run_benchmark.sh
 
@@ -14,6 +17,32 @@ python3 feature_benchmark.py
 # Run with custom audio file
 ./run_benchmark.sh path/to/audio.mp3
 ```
+
+## Test Audio
+
+**No audio files are committed to the repository.** You need to generate or provide test audio.
+
+### Generate Test Audio (Recommended)
+
+For consistent, reproducible benchmarks:
+
+```bash
+# Generate a 15-second test file with simulated beats
+../scripts/download_test_audio.sh
+
+# This creates test_audio.wav in the project root
+# The file has clear tempo patterns suitable for testing
+```
+
+### Use Your Own Audio
+
+```bash
+# Use any audio file you have
+./run_benchmark.sh path/to/your/music.wav
+python3 compare_bench.py path/to/your/music.mp3
+```
+
+See [TEST_AUDIO.md](TEST_AUDIO.md) for detailed information about test audio sources and generation.
 
 ## Benchmark Tools
 
@@ -182,18 +211,22 @@ See `.github/workflows/benchmark.yml` for configuration.
 
 ### Test Audio
 
-The default test audio is located in `bench/audio/`:
-- **File**: Alex-Productions - Future Bass Technology _ Shades.mp3
-- **Duration**: ~30 seconds
-- **Sample Rate**: 44.1 kHz
-- **License**: CC0 (Public Domain)
+**No audio files are committed** to avoid repository bloat. Generate test audio with:
 
-You can add your own audio files for testing:
+```bash
+../scripts/download_test_audio.sh
+```
+
+This creates a consistent 15-second test file suitable for benchmarking.
+
+**Or use your own audio:**
 
 ```bash
 # Test with your audio
 python3 compare_bench.py path/to/your/audio.wav
 ```
+
+See [TEST_AUDIO.md](TEST_AUDIO.md) for more details on audio sources and generation options.
 
 ### Result Files
 

@@ -29,5 +29,11 @@ target
 *.mp3
 *.log
 
+# Test audio files
+test_audio/
+test_audio.wav
+test_audio.mp3
+bench/audio/
+
 venv/*
 */venv/*

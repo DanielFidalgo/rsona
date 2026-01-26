@@ -136,7 +136,21 @@ RUST_LOG=trace cargo run
 
 See **[LOGGING.md](LOGGING.md)** for the complete migration guide and best practices.
 
+## Attribution
+
+Test audio used in CI/CD benchmarks is provided by the Freesound community:
+
+- **"Race"** by Andrew kn (Andrewkn) - [Freesound](https://freesound.org/people/Andrewkn/sounds/527676/)
+- Licensed under [Creative Commons Attribution 4.0](https://creativecommons.org/licenses/by/4.0/)
+- 2:33 ambient/atmospheric track, perfect for MIR testing
+
+See **[ATTRIBUTION.md](ATTRIBUTION.md)** for full attribution details.
+
+*Note: Audio files are not committed to the repository. They are downloaded on-demand in CI/CD or can be generated locally with `./scripts/download_test_audio.sh`.*
+
 ## License
+</text>
+
 
 Licensed under the Apache License, Version 2.0.
 

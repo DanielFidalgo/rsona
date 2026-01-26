@@ -49,6 +49,70 @@ jobs:
           python -m pip install --upgrade pip
           pip install librosa numpy
 
+      - name: Cache test audio file
+        id: cache-audio
+        uses: actions/cache@v4
+        with:
+          path: test_audio.wav
+          key: test-audio-freesound-v1
+
+      - name: Download or generate test audio
+        if: steps.cache-audio.outputs.cache-hit != 'true'
+        run: |
+          echo "Setting up test audio for benchmarking..."
+
+          # Try downloading from Freesound (CC-BY 4.0)
+          # "Race" by Andrew kn (Andrewkn)
+          # https://freesound.org/people/Andrewkn/sounds/527676/
+          # License: Creative Commons Attribution 4.0
+
+          download_success=false
+
+          # Freesound preview MP3 (HQ preview)
+          echo "Attempting to download from Freesound..."
+          for userid in 10497458 10096348 527676; do
+            if curl -L --max-time 30 --retry 3 \
+              "https://cdn.freesound.org/previews/527/527676_${userid}-hq.mp3" \
+              -o test_audio.mp3 2>/dev/null && [ -s test_audio.mp3 ]; then
+              echo "✓ Downloaded from Freesound"
+              download_success=true
+              break
+            fi
+          done
+
+          # Convert MP3 to WAV if download succeeded
+          if [ "$download_success" = true ]; then
+            echo "Converting to WAV..."
+            sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+            ffmpeg -i test_audio.mp3 -ar 44100 -ac 2 test_audio.wav -y -loglevel quiet
+            rm test_audio.mp3
+            echo "✓ Audio ready (2:33, 44.1kHz, Stereo)"
+            echo "  Source: 'Race' by Andrew kn (Andrewkn)"
+            echo "  License: CC-BY 4.0"
+            echo "  URL: https://freesound.org/people/Andrewkn/sounds/527676/"
+          else
+            # Fallback: Generate with sox
+            echo "Download failed, generating test audio with sox..."
+            sudo apt-get update -qq && sudo apt-get install -y -qq sox libsox-fmt-all
+            sox -n -r 44100 -c 2 test_audio.wav \
+              synth 15 sine 220 tremolo 2 0.5 \
+              synth 15 sine 330 tremolo 2 0.5 mix \
+              fade 0.1 15 0.1 \
+              gain -3
+            echo "✓ Generated test audio with sox (15s, 44.1kHz, Stereo)"
+          fi
+
+          ls -lh test_audio.wav
+
+      - name: Verify audio file exists
+        run: |
+          if [ ! -f "test_audio.wav" ]; then
+            echo "Error: test_audio.wav not found"
+            exit 1
+          fi
+          echo "Audio file ready:"
+          ls -lh test_audio.wav
+
       - name: Find latest tag
         id: tag
         run: |
@@ -60,13 +124,6 @@ jobs:
             echo "No tags found, skipping baseline comparison"
           fi
 
-      - name: Check audio file exists
-        run: |
-          if [ ! -f "bench/audio/edm_loop.wav" ]; then
-            echo "Error: bench/audio/edm_loop.wav not found"
-            exit 1
-          fi
-
       - name: Build bench (current)
         run: |
           RUSTFLAGS="-C target-cpu=native" cargo build --release --bin rsona_bench
@@ -74,7 +131,7 @@ jobs:
 
       - name: Run bench (current)
         run: |
-          ./rsona_bench_current bench/audio/edm_loop.wav > curr.json
+          ./rsona_bench_current test_audio.wav > curr.json
           echo "Current benchmark results:"
           cat curr.json
 
@@ -84,33 +141,22 @@ jobs:
           git stash
           git checkout ${{ steps.tag.outputs.tag }}
 
-      - name: Check if audio file exists in tag
-        if: steps.tag.outputs.tag != ''
-        id: check_audio
-        run: |
-          if [ -f "bench/audio/edm_loop.wav" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "Warning: Audio file not found in tag ${{ steps.tag.outputs.tag }}"
-          fi
-
       - name: Build bench (base)
-        if: steps.tag.outputs.tag != '' && steps.check_audio.outputs.exists == 'true'
+        if: steps.tag.outputs.tag != ''
         run: |
           cargo clean
           RUSTFLAGS="-C target-cpu=native" cargo build --release --bin rsona_bench
           cp target/release/rsona_bench rsona_bench_base
 
       - name: Run bench (base)
-        if: steps.tag.outputs.tag != '' && steps.check_audio.outputs.exists == 'true'
+        if: steps.tag.outputs.tag != ''
         run: |
-          ./rsona_bench_base bench/audio/edm_loop.wav > base.json
+          ./rsona_bench_base test_audio.wav > base.json
           echo "Baseline benchmark results:"
           cat base.json
 
       - name: Compare results
-        if: steps.tag.outputs.tag != '' && steps.check_audio.outputs.exists == 'true'
+        if: steps.tag.outputs.tag != ''
         run: |
           if [ -f "bench/compare.py" ]; then
             python bench/compare.py base.json curr.json
@@ -118,6 +164,7 @@ jobs:
             echo "Warning: bench/compare.py not found, showing raw comparison"
             echo "=== Base Results ==="
             cat base.json
+            echo ""
             echo "=== Current Results ==="
             cat curr.json
           fi
@@ -129,7 +176,7 @@ jobs:
           path: curr.json
 
       - name: Upload comparison results
-        if: steps.tag.outputs.tag != '' && steps.check_audio.outputs.exists == 'true'
+        if: steps.tag.outputs.tag != ''
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-comparison
