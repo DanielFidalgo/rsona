@@ -34,10 +34,17 @@ class BenchmarkRunner:
     def build_binary(self, output_name: str) -> Path:
         """Build rsona_bench binary."""
         print(f"Building {output_name}...")
+
+        # Get project root (parent of bench directory if we're in bench)
+        project_root = Path.cwd()
+        if project_root.name == "bench":
+            project_root = project_root.parent
+
         result = subprocess.run(
             ["cargo", "build", "--release", "--bin", "rsona_bench"],
             capture_output=True,
             text=True,
+            cwd=str(project_root),
         )
         if result.returncode != 0:
             print(f"Error building {output_name}:")
@@ -45,8 +52,8 @@ class BenchmarkRunner:
             sys.exit(1)
 
         # Copy binary to unique name
-        binary_src = Path("target/release/rsona_bench")
-        binary_dst = Path(f"target/release/{output_name}")
+        binary_src = project_root / "target/release/rsona_bench"
+        binary_dst = project_root / f"target/release/{output_name}"
         subprocess.run(["cp", str(binary_src), str(binary_dst)], check=True)
         return binary_dst
 
@@ -455,13 +462,29 @@ def main():
     print()
 
     # Save current state
-    subprocess.run(["git", "stash"], capture_output=True)
+    project_root = Path.cwd()
+    if project_root.name == "bench":
+        project_root = project_root.parent
+    subprocess.run(
+        ["git", "stash"],
+        capture_output=True,
+        cwd=str(project_root),
+    )
 
     try:
         # Build and run baseline
         print("Building baseline version...")
+
+        # Get project root
+        project_root = Path.cwd()
+        if project_root.name == "bench":
+            project_root = project_root.parent
+
         subprocess.run(
-            ["git", "checkout", baseline_version], check=True, capture_output=True
+            ["git", "checkout", baseline_version],
+            check=True,
+            capture_output=True,
+            cwd=str(project_root),
         )
         baseline_binary = runner.build_binary("rsona_bench_baseline")
 
@@ -470,8 +493,17 @@ def main():
 
         # Restore current version
         print("\nBuilding current version...")
-        subprocess.run(["git", "checkout", "-"], check=True, capture_output=True)
-        subprocess.run(["git", "stash", "pop"], capture_output=True)
+        subprocess.run(
+            ["git", "checkout", "-"],
+            check=True,
+            capture_output=True,
+            cwd=str(project_root),
+        )
+        subprocess.run(
+            ["git", "stash", "pop"],
+            capture_output=True,
+            cwd=str(project_root),
+        )
 
         current_binary = runner.build_binary("rsona_bench_current")
 
@@ -520,8 +552,19 @@ def main():
         sys.exit(1)
     finally:
         # Cleanup
-        subprocess.run(["git", "checkout", "-"], capture_output=True)
-        subprocess.run(["git", "stash", "pop"], capture_output=True)
+        project_root = Path.cwd()
+        if project_root.name == "bench":
+            project_root = project_root.parent
+        subprocess.run(
+            ["git", "checkout", "-"],
+            capture_output=True,
+            cwd=str(project_root),
+        )
+        subprocess.run(
+            ["git", "stash", "pop"],
+            capture_output=True,
+            cwd=str(project_root),
+        )
 
 
 if __name__ == "__main__":

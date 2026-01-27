@@ -125,12 +125,11 @@ jobs:
 
       - name: Run comprehensive benchmark comparison
         run: |
-          cd bench
-          python3 compare_versions.py ../test_audio.wav \
+          python3 bench/compare_versions.py test_audio.wav \
             --baseline "${{ steps.baseline.outputs.baseline }}" \
             --iterations 5 \
             --warmup 2 \
-            --output BENCHMARK_RESULTS.md
+            --output bench/BENCHMARK_RESULTS.md
 
       - name: Display benchmark summary
         if: always()
