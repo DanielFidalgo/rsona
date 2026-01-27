@@ -15,6 +15,8 @@ struct BenchmarkResult {
     parameters: Parameters,
     timing: Timing,
     results: Results,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    correctness: Option<CorrectnessMetrics>,
 }
 
 #[derive(Serialize)]
@@ -52,6 +54,16 @@ struct Results {
     tempo_bpm: f32,
     n_frames: usize,
     n_frequency_bins: usize,
+    n_mfcc_coeffs: usize,
+}
+
+#[derive(Serialize)]
+struct CorrectnessMetrics {
+    tempo_within_tolerance: bool,
+    frame_count_correct: bool,
+    all_features_valid: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    validation_notes: Option<Vec<String>>,
 }
 
 fn main() {
@@ -143,6 +155,46 @@ fn main() {
     // Total time
     let total_time = t_total.elapsed();
 
+    // Validate correctness
+    let mut validation_notes = Vec::new();
+    let mut all_valid = true;
+
+    // Check tempo is reasonable (30-300 BPM range for most music)
+    let tempo_valid = tempo.bpm >= 30.0 && tempo.bpm <= 300.0;
+    if !tempo_valid {
+        validation_notes.push(format!("Tempo {} BPM outside typical range", tempo.bpm));
+        all_valid = false;
+    }
+
+    // Check frame count matches expected
+    let expected_frames = (n_samples / hop_size).saturating_sub(1);
+    let frame_count_valid = n_frames == expected_frames;
+    if !frame_count_valid {
+        validation_notes.push(format!(
+            "Frame count {} doesn't match expected {}",
+            n_frames, expected_frames
+        ));
+        all_valid = false;
+    }
+
+    // Check all features produced valid output
+    let features_valid = n_mfcc > 0 && n_frequency_bins > 0 && n_frames > 0;
+    if !features_valid {
+        validation_notes.push("One or more features produced invalid output".to_string());
+        all_valid = false;
+    }
+
+    let correctness = Some(CorrectnessMetrics {
+        tempo_within_tolerance: tempo_valid,
+        frame_count_correct: frame_count_valid,
+        all_features_valid: features_valid && all_valid,
+        validation_notes: if validation_notes.is_empty() {
+            None
+        } else {
+            Some(validation_notes)
+        },
+    });
+
     // Build result structure
     let result = BenchmarkResult {
         audio_info: AudioInfo {
@@ -173,7 +225,9 @@ fn main() {
             tempo_bpm: tempo.bpm,
             n_frames,
             n_frequency_bins,
+            n_mfcc_coeffs: n_mfcc,
         },
+        correctness,
     };
 
     // Output JSON

@@ -169,8 +169,47 @@ class BenchmarkRunner:
         )
         lines.append("")
 
+        # Correctness Validation
+        correctness = current_info.get("correctness", {})
+        if correctness:
+            lines.append("## ✅ Correctness Validation")
+            lines.append("")
+            all_valid = correctness.get("all_features_valid", False)
+            if all_valid:
+                lines.append("**Status:** ✅ All validation checks passed")
+            else:
+                lines.append("**Status:** ⚠️ Some validation checks failed")
+            lines.append("")
+            lines.append("| Check | Status |")
+            lines.append("|-------|--------|")
+
+            tempo_ok = correctness.get("tempo_within_tolerance", False)
+            frames_ok = correctness.get("frame_count_correct", False)
+            features_ok = correctness.get("all_features_valid", False)
+
+            lines.append(f"| Tempo within range | {'✅' if tempo_ok else '⚠️'} |")
+            lines.append(f"| Frame count correct | {'✅' if frames_ok else '⚠️'} |")
+            lines.append(f"| All features valid | {'✅' if features_ok else '⚠️'} |")
+
+            notes = correctness.get("validation_notes")
+            if notes:
+                lines.append("")
+                lines.append("**Validation Notes:**")
+                for note in notes:
+                    lines.append(f"- {note}")
+            lines.append("")
+
         # Version Info
         lines.append("## Version Information")
+</text>
+
+<old_text line=425>
+    lines.append("")
+    lines.append("## Next Steps")
+    lines.append("")
+    lines.append("To enable performance comparisons:")
+    lines.append("1. Tag a release: `git tag v0.1.0 && git push --tags`")
+    lines.append("2. Future benchmarks will compare against this baseline")
         lines.append("")
         lines.append(f"- **Baseline:** `{baseline_version}`")
         lines.append(f"- **Current:** `HEAD`")
@@ -440,6 +479,37 @@ def generate_simple_report(
         )
 
     lines.append("")
+
+    # Correctness Validation
+    correctness = current_results.get("correctness", {})
+    if correctness:
+        lines.append("## ✅ Correctness Validation")
+        lines.append("")
+        all_valid = correctness.get("all_features_valid", False)
+        if all_valid:
+            lines.append("**Status:** ✅ All validation checks passed")
+        else:
+            lines.append("**Status:** ⚠️ Some validation checks failed")
+        lines.append("")
+        lines.append("| Check | Status |")
+        lines.append("|-------|--------|")
+
+        tempo_ok = correctness.get("tempo_within_tolerance", False)
+        frames_ok = correctness.get("frame_count_correct", False)
+        features_ok = correctness.get("all_features_valid", False)
+
+        lines.append(f"| Tempo within range | {'✅' if tempo_ok else '⚠️'} |")
+        lines.append(f"| Frame count correct | {'✅' if frames_ok else '⚠️'} |")
+        lines.append(f"| All features valid | {'✅' if features_ok else '⚠️'} |")
+
+        notes = correctness.get("validation_notes")
+        if notes:
+            lines.append("")
+            lines.append("**Validation Notes:**")
+            for note in notes:
+                lines.append(f"- {note}")
+        lines.append("")
+
     lines.append("## Next Steps")
     lines.append("")
     lines.append("To enable performance comparisons:")
