@@ -4,7 +4,7 @@ use std::time::Instant;
 use rsona::{
     audio,
     feature::{MfccConfig, mfcc, onset_strength_from_mel, rms},
-    signal::{FrameConfig, frame},
+    signal::{ChannelMode, FrameConfig, Window, frame},
     spectrum::{DbConfig, MelConfig, StftConfig, mel_spectrogram, stft},
     temporal::estimate_tempo,
 };
@@ -119,7 +119,10 @@ fn main() {
     let sample_rate = buffer.sample_rate;
 
     // Frame audio
-    let frame_cfg = FrameConfig::default();
+    let frame_cfg = FrameConfig {
+        channel_mode: ChannelMode::MixDownAverage,
+        ..FrameConfig::default()
+    };
     let frame_size = frame_cfg.frame_size;
     let t1 = Instant::now();
     let frames = frame(&buffer, frame_cfg).unwrap_or_else(|e| {
@@ -159,9 +162,18 @@ fn main() {
 
     let n_mfcc = mfcc_result.n_mfcc();
 
-    // RMS
+    // RMS (compute from rectangular-windowed frames to match librosa)
+    let rms_frame_cfg = FrameConfig {
+        window: Window::Rectangular,
+        channel_mode: ChannelMode::MixDownAverage,
+        ..FrameConfig::default()
+    };
     let t5 = Instant::now();
-    let rms_result = rms(&frames);
+    let rms_frames = frame(&buffer, rms_frame_cfg).unwrap_or_else(|e| {
+        eprintln!("Error framing audio for RMS: {}", e);
+        std::process::exit(1);
+    });
+    let rms_result = rms(&rms_frames);
     let rms_time = t5.elapsed();
 
     // Onset strength
@@ -281,7 +293,7 @@ fn main() {
         let stft_mag: Vec<Vec<f32>> = (0..n_frames)
             .map(|frame_idx| {
                 (0..n_frequency_bins)
-                    .map(|bin_idx| spec.as_slice()[bin_idx * n_frames + frame_idx].norm())
+                    .map(|bin_idx| spec.as_slice()[frame_idx * n_frequency_bins + bin_idx].norm())
                     .collect()
             })
             .collect();
@@ -290,7 +302,7 @@ fn main() {
         let mel_arr: Vec<Vec<f32>> = (0..n_frames)
             .map(|frame_idx| {
                 (0..n_mels)
-                    .map(|mel_idx| mel.as_slice()[mel_idx * n_frames + frame_idx])
+                    .map(|mel_idx| mel.as_slice()[frame_idx * n_mels + mel_idx])
                     .collect()
             })
             .collect();
@@ -299,7 +311,7 @@ fn main() {
         let mfcc_arr: Vec<Vec<f32>> = (0..n_frames)
             .map(|frame_idx| {
                 (0..n_mfcc)
-                    .map(|coeff_idx| mfcc_result.as_slice()[coeff_idx * n_frames + frame_idx])
+                    .map(|coeff_idx| mfcc_result.as_slice()[frame_idx * n_mfcc + coeff_idx])
                     .collect()
             })
             .collect();

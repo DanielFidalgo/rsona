@@ -40,32 +40,34 @@ impl WindowSpec {
 }
 
 fn hann(len: usize) -> Vec<f32> {
-    // Hann: w[n] = 0.5 - 0.5*cos(2πn/(N-1))
+    // Hann (periodic): w[n] = 0.5 - 0.5*cos(2πn/N)
+    // This matches librosa's default behavior (symmetric=False in scipy)
     // N=1 edge: define as [1.0]
     if len == 1 {
         return vec![1.0];
     }
-    let n_minus_1 = (len - 1) as f32;
+    let n_float = len as f32;
     let two_pi = std::f32::consts::TAU; // 2π
     (0..len)
         .map(|n| {
-            let angle = two_pi * (n as f32) / n_minus_1;
+            let angle = two_pi * (n as f32) / n_float;
             0.5 - 0.5 * angle.cos()
         })
         .collect()
 }
 
 fn hamming(len: usize) -> Vec<f32> {
-    // Hamming: w[n] = 0.54 - 0.46*cos(2πn/(N-1))
+    // Hamming (periodic): w[n] = 0.54 - 0.46*cos(2πn/N)
+    // This matches librosa's default behavior (symmetric=False in scipy)
     // N=1 edge: define as [1.0]
     if len == 1 {
         return vec![1.0];
     }
-    let n_minus_1 = (len - 1) as f32;
+    let n_float = len as f32;
     let two_pi = std::f32::consts::TAU;
     (0..len)
         .map(|n| {
-            let angle = two_pi * (n as f32) / n_minus_1;
+            let angle = two_pi * (n as f32) / n_float;
             0.54 - 0.46 * angle.cos()
         })
         .collect()
