@@ -201,15 +201,6 @@ class BenchmarkRunner:
 
         # Version Info
         lines.append("## Version Information")
-</text>
-
-<old_text line=425>
-    lines.append("")
-    lines.append("## Next Steps")
-    lines.append("")
-    lines.append("To enable performance comparisons:")
-    lines.append("1. Tag a release: `git tag v0.1.0 && git push --tags`")
-    lines.append("2. Future benchmarks will compare against this baseline")
         lines.append("")
         lines.append(f"- **Baseline:** `{baseline_version}`")
         lines.append(f"- **Current:** `HEAD`")
