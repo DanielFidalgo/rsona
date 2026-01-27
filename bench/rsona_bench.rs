@@ -10,142 +10,177 @@ use rsona::{
 };
 
 #[derive(Serialize)]
-struct BenchResult {
-    audio: String,
-    time_sec: f64,
-    tempo_bpm: f32,
-    n_frames: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    timings: Option<TimingBreakdown>,
+struct BenchmarkResult {
+    audio_info: AudioInfo,
+    parameters: Parameters,
+    timing: Timing,
+    results: Results,
 }
 
 #[derive(Serialize)]
-struct TimingBreakdown {
-    load_ms: f64,
-    frame_ms: f64,
-    stft_ms: f64,
-    mel_ms: f64,
-    mfcc_ms: f64,
-    rms_ms: f64,
-    onset_ms: f64,
-    tempo_ms: f64,
+struct AudioInfo {
+    audio_file: String,
+    duration_seconds: f64,
+    sample_rate: u32,
+    n_samples: usize,
+}
+
+#[derive(Serialize)]
+struct Parameters {
+    frame_size: usize,
+    hop_size: usize,
+    n_fft: usize,
+    n_mels: usize,
+    n_mfcc: usize,
+}
+
+#[derive(Serialize)]
+struct Timing {
+    load_time_ms: f64,
+    frame_time_ms: f64,
+    stft_time_ms: f64,
+    mel_time_ms: f64,
+    mfcc_time_ms: f64,
+    rms_time_ms: f64,
+    onset_time_ms: f64,
+    tempo_time_ms: f64,
+    total_time_ms: f64,
+}
+
+#[derive(Serialize)]
+struct Results {
+    tempo_bpm: f32,
+    n_frames: usize,
+    n_frequency_bins: usize,
 }
 
 fn main() {
-    let path = std::env::args().nth(1).expect("audio path");
-    let detailed = std::env::args().any(|arg| arg == "--detailed");
+    let args: Vec<String> = std::env::args().collect();
 
+    if args.len() < 2 {
+        eprintln!("Usage: {} <audio_file>", args[0]);
+        std::process::exit(1);
+    }
+
+    let path = &args[1];
+
+    // Start total timing
     let t_total = Instant::now();
 
+    // Load audio
     let t0 = Instant::now();
-    let buffer = audio::load(&path).unwrap();
+    let buffer = audio::load(path).unwrap_or_else(|e| {
+        eprintln!("Error loading audio: {}", e);
+        std::process::exit(1);
+    });
     let load_time = t0.elapsed();
 
+    let duration_seconds = buffer.samples.len() as f64 / buffer.sample_rate as f64;
+    let n_samples = buffer.samples.len();
+    let sample_rate = buffer.sample_rate;
+
+    // Frame audio
+    let frame_cfg = FrameConfig::default();
+    let frame_size = frame_cfg.frame_size;
     let t1 = Instant::now();
-    let frames = frame(&buffer, FrameConfig::default()).unwrap();
+    let frames = frame(&buffer, frame_cfg).unwrap_or_else(|e| {
+        eprintln!("Error framing audio: {}", e);
+        std::process::exit(1);
+    });
     let frame_time = t1.elapsed();
 
+    let hop_size = frames.hop_size();
+
+    // STFT
+    let stft_cfg = StftConfig::default();
+    let n_fft = stft_cfg.n_fft;
     let t2 = Instant::now();
-    let spec = stft(&frames, StftConfig::default()).unwrap();
+    let spec = stft(&frames, stft_cfg).unwrap_or_else(|e| {
+        eprintln!("Error computing STFT: {}", e);
+        std::process::exit(1);
+    });
     let stft_time = t2.elapsed();
 
+    let n_frequency_bins = spec.n_bins();
+    let n_frames = spec.n_frames();
+
+    // Mel spectrogram
+    let mel_cfg = MelConfig::default();
     let t3 = Instant::now();
-    let mel = mel_spectrogram(&spec, MelConfig::default());
+    let mel = mel_spectrogram(&spec, mel_cfg);
     let mel_time = t3.elapsed();
 
+    let n_mels = mel.n_mels();
+
+    // MFCC
+    let mfcc_cfg = MfccConfig::default();
     let t4 = Instant::now();
-    let mfcc = mfcc(&mel, MfccConfig::default());
+    let mfcc_result = mfcc(&mel, mfcc_cfg);
     let mfcc_time = t4.elapsed();
 
+    let n_mfcc = mfcc_result.n_mfcc();
+
+    // RMS
     let t5 = Instant::now();
     let _rms_result = rms(&frames);
     let rms_time = t5.elapsed();
 
+    // Onset strength
     let t6 = Instant::now();
     let onset = onset_strength_from_mel(&mel, DbConfig::default());
     let onset_time = t6.elapsed();
 
+    // Tempo estimation
     let t7 = Instant::now();
     let tempo = estimate_tempo(
         onset.values(),
         frames.sample_rate(),
-        frames.hop_size(),
+        hop_size,
         Default::default(),
     );
     let tempo_time = t7.elapsed();
 
-    let elapsed = t_total.elapsed().as_secs_f64();
+    // Total time
+    let total_time = t_total.elapsed();
 
-    let timings = if detailed {
-        Some(TimingBreakdown {
-            load_ms: load_time.as_secs_f64() * 1000.0,
-            frame_ms: frame_time.as_secs_f64() * 1000.0,
-            stft_ms: stft_time.as_secs_f64() * 1000.0,
-            mel_ms: mel_time.as_secs_f64() * 1000.0,
-            mfcc_ms: mfcc_time.as_secs_f64() * 1000.0,
-            rms_ms: rms_time.as_secs_f64() * 1000.0,
-            onset_ms: onset_time.as_secs_f64() * 1000.0,
-            tempo_ms: tempo_time.as_secs_f64() * 1000.0,
-        })
-    } else {
-        None
+    // Build result structure
+    let result = BenchmarkResult {
+        audio_info: AudioInfo {
+            audio_file: path.clone(),
+            duration_seconds,
+            sample_rate,
+            n_samples,
+        },
+        parameters: Parameters {
+            frame_size,
+            hop_size,
+            n_fft,
+            n_mels,
+            n_mfcc,
+        },
+        timing: Timing {
+            load_time_ms: load_time.as_secs_f64() * 1000.0,
+            frame_time_ms: frame_time.as_secs_f64() * 1000.0,
+            stft_time_ms: stft_time.as_secs_f64() * 1000.0,
+            mel_time_ms: mel_time.as_secs_f64() * 1000.0,
+            mfcc_time_ms: mfcc_time.as_secs_f64() * 1000.0,
+            rms_time_ms: rms_time.as_secs_f64() * 1000.0,
+            onset_time_ms: onset_time.as_secs_f64() * 1000.0,
+            tempo_time_ms: tempo_time.as_secs_f64() * 1000.0,
+            total_time_ms: total_time.as_secs_f64() * 1000.0,
+        },
+        results: Results {
+            tempo_bpm: tempo.bpm,
+            n_frames,
+            n_frequency_bins,
+        },
     };
 
-    let res = BenchResult {
-        audio: path,
-        time_sec: elapsed,
-        tempo_bpm: tempo.bpm,
-        n_frames: mfcc.n_frames(),
-        timings,
-    };
+    // Output JSON
+    let json = serde_json::to_string_pretty(&result).unwrap_or_else(|e| {
+        eprintln!("Error serializing result: {}", e);
+        std::process::exit(1);
+    });
 
-    println!("{}", serde_json::to_string(&res).unwrap());
-
-    if detailed {
-        eprintln!("\n=== Detailed Timing Breakdown ===");
-        if let Some(t) = &res.timings {
-            eprintln!(
-                "Audio Load:  {:>8.2} ms ({:>5.1}%)",
-                t.load_ms,
-                t.load_ms / elapsed / 10.0
-            );
-            eprintln!(
-                "Framing:     {:>8.2} ms ({:>5.1}%)",
-                t.frame_ms,
-                t.frame_ms / elapsed / 10.0
-            );
-            eprintln!(
-                "STFT:        {:>8.2} ms ({:>5.1}%)",
-                t.stft_ms,
-                t.stft_ms / elapsed / 10.0
-            );
-            eprintln!(
-                "Mel Spec:    {:>8.2} ms ({:>5.1}%)",
-                t.mel_ms,
-                t.mel_ms / elapsed / 10.0
-            );
-            eprintln!(
-                "MFCC:        {:>8.2} ms ({:>5.1}%)",
-                t.mfcc_ms,
-                t.mfcc_ms / elapsed / 10.0
-            );
-            eprintln!(
-                "RMS:         {:>8.2} ms ({:>5.1}%)",
-                t.rms_ms,
-                t.rms_ms / elapsed / 10.0
-            );
-            eprintln!(
-                "Onset:       {:>8.2} ms ({:>5.1}%)",
-                t.onset_ms,
-                t.onset_ms / elapsed / 10.0
-            );
-            eprintln!(
-                "Tempo:       {:>8.2} ms ({:>5.1}%)",
-                t.tempo_ms,
-                t.tempo_ms / elapsed / 10.0
-            );
-            eprintln!("---");
-            eprintln!("Total:       {:>8.2} ms", elapsed * 1000.0);
-        }
-    }
+    println!("{}", json);
 }

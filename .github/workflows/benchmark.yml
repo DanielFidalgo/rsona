@@ -1,21 +1,28 @@
-name: Benchmark Regression
+name: Benchmark Comparison
 
 on:
   pull_request:
+    paths:
+      - 'src/**'
+      - 'bench/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
-  bench:
+  benchmark:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-      - name: Checkout current code
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Rust dependencies
@@ -40,16 +47,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          key: ${{ runner.os }}-pip-benchmark
           restore-keys: |
             ${{ runner.os }}-pip-
 
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install librosa numpy
+          pip install numpy librosa
 
-      - name: Cache test audio file
+      - name: Cache test audio
         id: cache-audio
         uses: actions/cache@v4
         with:
@@ -86,8 +93,8 @@ jobs:
             exit 1
           fi
 
-          # Check file size is reasonable (should be > 1MB)
-          file_size=$(stat -c%s test_audio.wav 2>/dev/null || stat -f%z test_audio.wav 2>/dev/null || echo "0")
+          # Check file size is reasonable (should be > 100KB)
+          file_size=$(stat -c%s test_audio.wav)
           if [ "$file_size" -lt 100000 ]; then
             echo "Error: test_audio.wav is too small ($file_size bytes)"
             exit 1
@@ -105,73 +112,112 @@ jobs:
           echo "Audio file ready:"
           ls -lh test_audio.wav
 
-      - name: Find latest tag
-        id: tag
+      - name: Find baseline version
+        id: baseline
         run: |
           TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          if [ -n "$TAG" ]; then
-            echo "Found tag: $TAG"
-          else
-            echo "No tags found, skipping baseline comparison"
+          if [ -z "$TAG" ]; then
+            echo "No tags found, using HEAD~1"
+            TAG="HEAD~1"
           fi
+          echo "baseline=$TAG" >> $GITHUB_OUTPUT
+          echo "Found baseline: $TAG"
 
-      - name: Build bench (current)
+      - name: Run comprehensive benchmark comparison
         run: |
-          RUSTFLAGS="-C target-cpu=native" cargo build --release --bin rsona_bench
-          cp target/release/rsona_bench rsona_bench_current
+          cd bench
+          python3 compare_versions.py ../test_audio.wav \
+            --baseline "${{ steps.baseline.outputs.baseline }}" \
+            --iterations 5 \
+            --warmup 2 \
+            --output BENCHMARK_RESULTS.md
 
-      - name: Run bench (current)
+      - name: Display benchmark summary
+        if: always()
         run: |
-          ./rsona_bench_current test_audio.wav > curr.json
-          echo "Current benchmark results:"
-          cat curr.json
-
-      - name: Checkout previous release
-        if: steps.tag.outputs.tag != ''
-        run: |
-          git stash
-          git checkout ${{ steps.tag.outputs.tag }}
-
-      - name: Build bench (base)
-        if: steps.tag.outputs.tag != ''
-        run: |
-          cargo clean
-          RUSTFLAGS="-C target-cpu=native" cargo build --release --bin rsona_bench
-          cp target/release/rsona_bench rsona_bench_base
-
-      - name: Run bench (base)
-        if: steps.tag.outputs.tag != ''
-        run: |
-          ./rsona_bench_base test_audio.wav > base.json
-          echo "Baseline benchmark results:"
-          cat base.json
-
-      - name: Compare results
-        if: steps.tag.outputs.tag != ''
-        run: |
-          if [ -f "bench/compare.py" ]; then
-            python bench/compare.py base.json curr.json
-          else
-            echo "Warning: bench/compare.py not found, showing raw comparison"
-            echo "=== Base Results ==="
-            cat base.json
+          if [ -f "bench/BENCHMARK_RESULTS.md" ]; then
+            echo "================================"
+            echo "BENCHMARK RESULTS SUMMARY"
+            echo "================================"
+            head -50 bench/BENCHMARK_RESULTS.md
             echo ""
-            echo "=== Current Results ==="
-            cat curr.json
+            echo "Full report available in artifacts"
           fi
 
-      - name: Upload current results
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-results
-          path: curr.json
+      - name: Check for performance regressions
+        run: |
+          if [ -f "bench/BENCHMARK_RESULTS.md" ]; then
+            if grep -q "⚠️ REGRESSION" bench/BENCHMARK_RESULTS.md; then
+              echo "::warning::Performance regression detected! Review the benchmark report."
+              # Don't fail the build, just warn
+              # exit 1
+            fi
+          fi
 
-      - name: Upload comparison results
-        if: steps.tag.outputs.tag != ''
+      - name: Upload benchmark report
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: benchmark-comparison
+          name: benchmark-report
+          path: bench/BENCHMARK_RESULTS.md
+          retention-days: 90
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-binaries
           path: |
-            curr.json
-            base.json
+            target/release/rsona_bench_*
+          retention-days: 7
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reportPath = 'bench/BENCHMARK_RESULTS.md';
+
+            if (!fs.existsSync(reportPath)) {
+              console.log('No benchmark report found');
+              return;
+            }
+
+            const report = fs.readFileSync(reportPath, 'utf8');
+
+            // Extract summary section
+            const summaryMatch = report.match(/## Summary\n\n[\s\S]*?(?=\n## |$)/);
+            const summary = summaryMatch ? summaryMatch[0] : report.substring(0, 1000);
+
+            const body = `## 📊 Benchmark Results
+
+${summary}
+
+<details>
+<summary>View Full Report</summary>
+
+${report}
+
+</details>
+
+📎 Full report available in [workflow artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Benchmark Complete 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f "bench/BENCHMARK_RESULTS.md" ]; then
+            cat bench/BENCHMARK_RESULTS.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Benchmark report not generated" >> $GITHUB_STEP_SUMMARY
+          fi
