@@ -59,21 +59,27 @@ jobs:
         run: |
           python -m pip install --upgrade pip
 
-          # Check if librosa >= 0.10.0 is already installed
-          if python3 -c "import librosa; from packaging import version; assert version.parse(librosa.__version__) >= version.parse('0.10.0')" 2>/dev/null; then
-            echo "✓ librosa >= 0.10.0 already installed ($(python3 -c 'import librosa; print(librosa.__version__)'))"
-          else
-            echo "Upgrading librosa to >= 0.10.0..."
-            pip install --upgrade 'librosa>=0.10.0'
-          fi
+          # Force upgrade librosa to ensure >= 0.10.0
+          echo "Upgrading librosa to >= 0.10.0..."
+          pip install --upgrade --force-reinstall --no-cache-dir 'librosa>=0.10.0'
 
           # Install remaining requirements
           pip install -r bench/requirements.txt
 
-      - name: Verify librosa version
+      - name: Verify librosa version and API
         run: |
           echo "Verifying librosa installation..."
           python3 -c "import librosa; print(f'librosa version: {librosa.__version__}')"
+
+          echo "Testing librosa.feature.rhythm.tempo API..."
+          python3 -c "
+import librosa
+import numpy as np
+# Test that the new API exists
+assert hasattr(librosa.feature, 'rhythm'), 'librosa.feature.rhythm not found'
+assert hasattr(librosa.feature.rhythm, 'tempo'), 'librosa.feature.rhythm.tempo not found'
+print('✓ librosa.feature.rhythm.tempo API is available')
+"
 
       - name: Cache test audio
         id: cache-audio
@@ -312,27 +318,7 @@ jobs:
             echo "Full parity report available in artifacts"
           fi
 
-      - name: Check for performance regressions
-        if: always()
-        run: |
-          if [ -f "bench/BENCHMARK_RESULTS.md" ]; then
-            echo "================================"
-            echo "BENCHMARK RESULTS SUMMARY"
-            echo "================================"
-            head -50 bench/BENCHMARK_RESULTS.md
-            echo ""
-            echo "Full report available in artifacts"
-          fi
 
-          if [ -f "bench/LIBROSA_COMPARISON.md" ]; then
-            echo ""
-            echo "================================"
-            echo "LIBROSA COMPARISON SUMMARY"
-            echo "================================"
-            head -30 bench/LIBROSA_COMPARISON.md
-            echo ""
-            echo "Full comparison available in artifacts"
-          fi
 
       - name: Check for performance regressions
         run: |
