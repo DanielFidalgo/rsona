@@ -198,35 +198,36 @@ jobs:
             --output bench/FEATURE_PARITY.md; then
             echo "✓ Feature parity validation completed"
           else
-            echo "⚠ Feature parity validation not yet fully implemented"
+            echo "⚠ Feature parity validation failed - creating error report"
             cat > bench/FEATURE_PARITY.md << 'EOF'
           # rsona Feature Parity Report
 
-          ## ⚠️ Validation Not Yet Complete
+          ## ⚠️ Validation Failed
 
-          Feature parity validation framework is ready but needs:
+          The feature parity validation could not be completed. This is likely due to:
 
-          1. **rsona_bench --features** integration
-          2. **Array extraction** from JSON output
-          3. **Feature comparison** implementation
+          1. **rsona_bench build failure** - Check that `rsona_bench --features` compiles
+          2. **Feature extraction error** - JSON parsing or array conversion issues
+          3. **librosa incompatibility** - librosa API changes or missing dependencies
+          4. **Numerical comparison failure** - Arrays with incompatible shapes
 
-          ### Status
+          ### Debugging Steps
 
-          Currently validates:
-          - Basic output format ✓
-          - Tempo and frame counts ✓
+          Run locally to diagnose:
+          ```bash
+          # Test rsona_bench with features flag
+          cargo run --release --bin rsona_bench -- test_audio.wav --features
 
-          Coming soon:
-          - STFT magnitude arrays
-          - Mel spectrogram arrays
-          - MFCC coefficient arrays
-          - RMS values
-          - Onset envelope
+          # Test full validation
+          python3 bench/feature_parity.py test_audio.wav --tolerance 0.01
+          ```
 
-          See `bench/feature_parity.py` for implementation details.
+          ### Check Workflow Logs
+
+          Review the "Run feature parity validation" step logs for detailed error messages.
 
           ---
-          *Framework ready - implementation in progress*
+          *This is an error report. Fix the issues above to see full validation results.*
           EOF
           fi
 

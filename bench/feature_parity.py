@@ -165,46 +165,65 @@ def run_librosa_pipeline(audio_path: str) -> Dict[str, Any]:
 
 
 def run_rsona_pipeline(audio_path: str) -> Dict[str, Any]:
-    """Run rsona pipeline and extract all features via rsona_runner.rs."""
+    """Run rsona pipeline and extract all features using --features flag."""
     print("Running rsona pipeline...")
 
-    # Build rsona_runner if needed
     bench_dir = Path(__file__).parent
     project_root = bench_dir.parent
 
-    # Create a simple runner that outputs features in JSON
-    runner_path = bench_dir / "librosa_comparison" / "rsona_runner.py"
-
-    if not runner_path.exists():
-        # Use rsona_bench in compat mode for now
-        result = subprocess.run(
-            ["cargo", "run", "--release", "--bin", "rsona_bench", "--", audio_path],
-            cwd=project_root,
-            capture_output=True,
-            text=True,
-        )
-
-        if result.returncode != 0:
-            raise RuntimeError(f"rsona_bench failed: {result.stderr}")
-
-        # Parse JSON from output
-        data = json.loads(result.stdout)
-
-        # Extract values from new format
-        return {
-            "tempo_bpm": data["results"]["tempo_bpm"],
-            "n_frames": data["results"]["n_frames"],
-            "n_frequency_bins": data["results"]["n_frequency_bins"],
-            # Note: Full feature arrays not available in simple mode
-            # Would need extended output format
-        }
-
-    # For now, return minimal data
-    # TODO: Extend rsona_bench to output full feature arrays for validation
-    raise NotImplementedError(
-        "Full feature extraction from rsona not yet implemented. "
-        "Need to extend rsona_bench to output STFT, mel, MFCC arrays."
+    # Use rsona_bench with --features flag to get full feature arrays
+    result = subprocess.run(
+        [
+            "cargo",
+            "run",
+            "--release",
+            "--bin",
+            "rsona_bench",
+            "--",
+            audio_path,
+            "--features",
+        ],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
     )
+
+    if result.returncode != 0:
+        raise RuntimeError(f"rsona_bench failed: {result.stderr}")
+
+    # Parse JSON from output
+    data = json.loads(result.stdout)
+
+    # Extract features and convert to numpy arrays
+    features = data["features"]
+    audio_info = data["audio_info"]
+
+    # Convert nested lists to numpy arrays
+    # Features are in [frames, bins] format from rsona
+    stft_mag = np.array(
+        features["stft_magnitude"], dtype=np.float32
+    ).T  # Transpose to [bins, frames]
+    mel = np.array(
+        features["mel_spectrogram"], dtype=np.float32
+    ).T  # Transpose to [mels, frames]
+    mfcc = np.array(
+        features["mfcc"], dtype=np.float32
+    ).T  # Transpose to [coeffs, frames]
+    rms = np.array(features["rms"], dtype=np.float32)
+    onset = np.array(features["onset_envelope"], dtype=np.float32)
+
+    return {
+        "sample_rate": audio_info["sample_rate"],
+        "n_samples": audio_info["n_samples"],
+        "stft_mag": stft_mag,
+        "mel": mel,
+        "mfcc": mfcc,
+        "rms": rms,
+        "onset": onset,
+        "tempo_bpm": features["tempo_bpm"],
+        "n_frames": stft_mag.shape[1],
+        "n_frequency_bins": stft_mag.shape[0],
+    }
 
 
 def generate_report(
@@ -354,21 +373,12 @@ def main():
 
     # Run both pipelines
     librosa_data = run_librosa_pipeline(args.audio_file)
-
-    print()
-    print("⚠️  Note: Full feature extraction from rsona not yet implemented.")
-    print("This script currently only validates tempo and frame counts.")
-    print("To enable full validation, rsona_bench needs to output:")
-    print("  - STFT magnitude arrays")
-    print("  - Mel spectrogram arrays")
-    print("  - MFCC coefficient arrays")
-    print("  - RMS values")
-    print("  - Onset envelope")
-    print()
-    print("For now, running librosa-only analysis...")
     print()
 
-    # For now, just show what librosa extracted
+    rsona_data = run_rsona_pipeline(args.audio_file)
+    print()
+
+    # Show what was extracted
     print("Librosa extracted:")
     print(f"  - Sample rate: {librosa_data['sample_rate']} Hz")
     print(f"  - Samples: {librosa_data['n_samples']}")
@@ -382,37 +392,84 @@ def main():
     print(f"  - Tempo: {librosa_data['tempo_bpm']:.2f} BPM")
     print()
 
-    # TODO: Uncomment when rsona provides full feature extraction
-    # rsona_data = run_rsona_pipeline(args.audio_file)
-    #
-    # # Validate each feature
-    # validator.validate_feature(
-    #     "stft_magnitude",
-    #     rsona_data["stft_mag"],
-    #     librosa_data["stft_mag"],
-    #     "Short-Time Fourier Transform magnitude spectrum"
-    # )
-    #
-    # validator.validate_feature(
-    #     "mel_spectrogram",
-    #     rsona_data["mel"],
-    #     librosa_data["mel"],
-    #     "Mel-frequency spectrogram"
-    # )
-    #
-    # validator.validate_feature(
-    #     "mfcc",
-    #     rsona_data["mfcc"],
-    #     librosa_data["mfcc"],
-    #     "Mel-Frequency Cepstral Coefficients"
-    # )
-    #
-    # # Generate report
-    # report = generate_report(validator, args.audio_file, args.output)
-    # print(report)
+    print("rsona extracted:")
+    print(f"  - Sample rate: {rsona_data['sample_rate']} Hz")
+    print(f"  - Samples: {rsona_data['n_samples']}")
+    print(f"  - Frames: {rsona_data['n_frames']}")
+    print(f"  - Frequency bins: {rsona_data['n_frequency_bins']}")
+    print(f"  - STFT shape: {rsona_data['stft_mag'].shape}")
+    print(f"  - Mel shape: {rsona_data['mel'].shape}")
+    print(f"  - MFCC shape: {rsona_data['mfcc'].shape}")
+    print(f"  - RMS shape: {rsona_data['rms'].shape}")
+    print(f"  - Onset envelope length: {len(rsona_data['onset'])}")
+    print(f"  - Tempo: {rsona_data['tempo_bpm']:.2f} BPM")
+    print()
 
-    print("TODO: Extend rsona_bench to output full feature arrays for validation.")
-    print("Current comparison in compare_bench.py only validates tempo and timing.")
+    # Validate each feature
+    print("Validating features...")
+    print()
+
+    validator.validate_feature(
+        "stft_magnitude",
+        rsona_data["stft_mag"],
+        librosa_data["stft_mag"],
+        "Short-Time Fourier Transform magnitude spectrum",
+    )
+
+    validator.validate_feature(
+        "mel_spectrogram",
+        rsona_data["mel"],
+        librosa_data["mel"],
+        "Mel-frequency spectrogram",
+    )
+
+    validator.validate_feature(
+        "mfcc",
+        rsona_data["mfcc"],
+        librosa_data["mfcc"],
+        "Mel-Frequency Cepstral Coefficients",
+    )
+
+    validator.validate_feature(
+        "rms", rsona_data["rms"], librosa_data["rms"], "Root Mean Square energy"
+    )
+
+    validator.validate_feature(
+        "onset_envelope",
+        rsona_data["onset"],
+        librosa_data["onset"],
+        "Onset strength envelope",
+    )
+
+    # Validate tempo
+    tempo_diff = abs(rsona_data["tempo_bpm"] - librosa_data["tempo_bpm"])
+    tempo_diff_pct = (tempo_diff / librosa_data["tempo_bpm"]) * 100
+    tempo_pass = tempo_diff_pct <= (validator.tolerance * 100)
+
+    validator.results["tempo"] = {
+        "pass": tempo_pass,
+        "rsona_value": rsona_data["tempo_bpm"],
+        "librosa_value": librosa_data["tempo_bpm"],
+        "difference_pct": tempo_diff_pct,
+        "description": "Tempo estimation (BPM)",
+    }
+
+    print(
+        f"Tempo: rsona={rsona_data['tempo_bpm']:.2f} BPM, "
+        f"librosa={librosa_data['tempo_bpm']:.2f} BPM, "
+        f"diff={tempo_diff_pct:.2f}% {'✓' if tempo_pass else '✗'}"
+    )
+    print()
+
+    # Generate report
+    report = generate_report(validator, args.audio_file, args.output)
+    print(report)
+
+    # Save to file if specified
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(report)
+        print(f"Report saved to: {args.output}")
 
 
 if __name__ == "__main__":
