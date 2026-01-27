@@ -258,6 +258,7 @@ fn apply_sparse_filter(
 }
 
 /// Build mel filter bank (triangular) for one-sided FFT bins with sparse representation.
+/// Uses frequency-based linear interpolation to match librosa's implementation.
 fn build_mel_filterbank(
     sample_rate: u32,
     n_fft: usize,
@@ -271,84 +272,72 @@ fn build_mel_filterbank(
     assert!(n_mels > 0);
     assert!(n_bins == (n_fft / 2) + 1, "n_bins must be n_fft/2 + 1");
 
-    // 1) Compute mel-spaced frequencies (n_mels + 2 points).
+    // 1) Compute mel-spaced frequencies (n_mels + 2 points for triangle vertices).
     let m_min = hz_to_mel(fmin, mel_scale);
     let m_max = hz_to_mel(fmax, mel_scale);
 
-    let mut mel_points = Vec::with_capacity(n_mels + 2);
+    let mut mel_freqs = Vec::with_capacity(n_mels + 2);
     for i in 0..(n_mels + 2) {
         let alpha = i as f32 / (n_mels + 1) as f32;
-        mel_points.push(m_min + alpha * (m_max - m_min));
+        let m = m_min + alpha * (m_max - m_min);
+        mel_freqs.push(mel_to_hz(m, mel_scale));
     }
 
-    let hz_points: Vec<f32> = mel_points
-        .into_iter()
-        .map(|m| mel_to_hz(m, mel_scale))
-        .collect();
-
-    // 2) Map Hz points to FFT bin indices.
-    // Bin frequency = b * sr / n_fft.
-    let bin = |hz: f32| -> usize {
-        let b = (hz * n_fft as f32 / sample_rate as f32).floor() as isize;
-        b.clamp(0, (n_bins - 1) as isize) as usize
-    };
-
-    let mut bins = Vec::with_capacity(n_mels + 2);
-    for &hz in &hz_points {
-        bins.push(bin(hz));
+    // 2) Compute FFT bin frequencies.
+    // Bin frequency = bin_index * sample_rate / n_fft
+    let mut fft_freqs = Vec::with_capacity(n_bins);
+    for bin in 0..n_bins {
+        fft_freqs.push(bin as f32 * sample_rate as f32 / n_fft as f32);
     }
 
-    // 3) Build sparse triangular filters.
+    // 3) Build triangular filters using frequency-based linear interpolation.
+    // This matches librosa's approach: for each mel filter, create weights based on
+    // the continuous frequency relationship between mel points and FFT bins.
     let mut sparse_filters = Vec::with_capacity(n_mels);
 
     for mel_idx in 0..n_mels {
-        let left = bins[mel_idx];
-        let center = bins[mel_idx + 1];
-        let right = bins[mel_idx + 2];
+        let f_left = mel_freqs[mel_idx];
+        let f_center = mel_freqs[mel_idx + 1];
+        let f_right = mel_freqs[mel_idx + 2];
 
-        if left == center || center == right {
-            // Degenerate; create empty filter
-            sparse_filters.push(SparseFilter {
-                start: left,
-                end: left,
-                coeffs: Vec::new(),
-            });
-            continue;
+        // For each FFT bin, compute the triangular filter weight
+        let mut coeffs = Vec::new();
+        let mut start_bin = None;
+        let mut end_bin = 0;
+
+        for (bin_idx, &bin_freq) in fft_freqs.iter().enumerate() {
+            let weight = if bin_freq < f_left || bin_freq > f_right {
+                0.0
+            } else if bin_freq <= f_center {
+                // Rising slope: interpolate from f_left to f_center
+                (bin_freq - f_left) / (f_center - f_left)
+            } else {
+                // Falling slope: interpolate from f_center to f_right
+                (f_right - bin_freq) / (f_right - f_center)
+            };
+
+            if weight > 0.0 {
+                if start_bin.is_none() {
+                    start_bin = Some(bin_idx);
+                }
+                coeffs.push(weight);
+                end_bin = bin_idx + 1;
+            }
         }
 
-        // Build coefficients for non-zero range [left, right)
-        let len = right - left;
-        let mut coeffs = Vec::with_capacity(len);
-
-        // Rising slope: left -> center
-        for b in left..center {
-            let num = (b - left) as f32;
-            let den = (center - left) as f32;
-            coeffs.push(num / den);
-        }
-
-        // Falling slope: center -> right
-        for b in center..right {
-            let num = (right - b) as f32;
-            let den = (right - center) as f32;
-            coeffs.push(num / den);
-        }
-
-        // Optional Slaney-style normalization: scale each filter by 2/(f_{m+2}-f_m)
+        // Apply Slaney-style normalization if requested
         if normalize {
-            let f_left = hz_points[mel_idx];
-            let f_right = hz_points[mel_idx + 2];
             let enorm = 2.0 / (f_right - f_left).max(1e-12);
             for coeff in &mut coeffs {
                 *coeff *= enorm;
             }
         }
 
-        sparse_filters.push(SparseFilter {
-            start: left,
-            end: right,
-            coeffs,
-        });
+        // Create sparse filter
+        let start = start_bin.unwrap_or(0);
+        let end = if coeffs.is_empty() { start } else { end_bin };
+
+        sparse_filters.push(SparseFilter { start, end, coeffs });
     }
 
     MelFilterBank {
