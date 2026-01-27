@@ -77,41 +77,49 @@ pub fn onset_strength(spec: &Spectrogram, cfg: OnsetConfig) -> OnsetEnvelope {
 /// This is more efficient when you already have a mel spectrogram computed,
 /// avoiding redundant computation.
 ///
-/// Standard onset strength computation:
-/// - log / dB scaling
-/// - positive spectral flux
-/// - sum across mel bands
-/// - optional smoothing
-pub fn onset_strength_from_mel(mel: &MelSpectrogram, db_cfg: DbConfig) -> OnsetEnvelope {
+/// Standard onset strength computation (matches librosa when S=mel is provided):
+/// - positive spectral flux on power values (no dB conversion)
+/// - mean across mel bands
+/// - lag of 1 frame (compare frame i-2 with frame i-3)
+/// - prepends 3 zeros for centering to match librosa behavior
+pub fn onset_strength_from_mel(mel: &MelSpectrogram, _db_cfg: DbConfig) -> OnsetEnvelope {
     let n_frames = mel.n_frames();
     let n_mels = mel.n_mels();
 
-    // 1) Log / dB compression
-    let mel_db = power_to_db(mel.as_slice(), db_cfg);
+    // Work directly on power values (no dB conversion) to match librosa's behavior
+    // when it receives a pre-computed mel spectrogram
+    let mel_power = mel.as_slice();
 
-    // 3) Positive differences across frames with optimized computation
+    // Compute positive differences across frames
+    // Librosa prepends 3 zeros for centering
     let mut onset = vec![0.0f32; n_frames];
 
-    if n_frames >= 2 {
+    if n_frames >= 4 {
         if n_frames > 100 {
             // Parallel path for large frame counts
-            onset[1..]
+            onset[3..]
                 .par_iter_mut()
                 .enumerate()
                 .for_each(|(idx, onset_val)| {
-                    let t = idx + 1;
-                    let cur = &mel_db[t * n_mels..(t + 1) * n_mels];
-                    let prev = &mel_db[(t - 1) * n_mels..t * n_mels];
+                    let i = idx + 3; // actual index in onset array
+                    let t_cur = i - 2; // current frame index in mel
+                    let t_prev = i - 3; // previous frame index in mel
+
+                    let cur = &mel_power[t_cur * n_mels..(t_cur + 1) * n_mels];
+                    let prev = &mel_power[t_prev * n_mels..(t_prev + 1) * n_mels];
 
                     *onset_val = compute_positive_diff_sum(cur, prev) / n_mels as f32;
                 });
         } else {
             // Sequential path for smaller frame counts
-            for t in 1..n_frames {
-                let cur = &mel_db[t * n_mels..(t + 1) * n_mels];
-                let prev = &mel_db[(t - 1) * n_mels..t * n_mels];
+            for i in 3..n_frames {
+                let t_cur = i - 2;
+                let t_prev = i - 3;
 
-                onset[t] = compute_positive_diff_sum(cur, prev) / n_mels as f32;
+                let cur = &mel_power[t_cur * n_mels..(t_cur + 1) * n_mels];
+                let prev = &mel_power[t_prev * n_mels..(t_prev + 1) * n_mels];
+
+                onset[i] = compute_positive_diff_sum(cur, prev) / n_mels as f32;
             }
         }
     }
