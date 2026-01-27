@@ -117,19 +117,28 @@ jobs:
         run: |
           TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           if [ -z "$TAG" ]; then
-            echo "No tags found, using HEAD~1"
-            TAG="HEAD~1"
+            echo "No tags found - will run without baseline comparison"
+            echo "has_baseline=false" >> $GITHUB_OUTPUT
+          else
+            echo "Found baseline: $TAG"
+            echo "has_baseline=true" >> $GITHUB_OUTPUT
+            echo "baseline=$TAG" >> $GITHUB_OUTPUT
           fi
-          echo "baseline=$TAG" >> $GITHUB_OUTPUT
-          echo "Found baseline: $TAG"
 
       - name: Run comprehensive benchmark comparison
         run: |
-          python3 bench/compare_versions.py test_audio.wav \
-            --baseline "${{ steps.baseline.outputs.baseline }}" \
-            --iterations 5 \
-            --warmup 2 \
-            --output bench/BENCHMARK_RESULTS.md
+          if [ "${{ steps.baseline.outputs.has_baseline }}" = "true" ]; then
+            python3 bench/compare_versions.py test_audio.wav \
+              --baseline "${{ steps.baseline.outputs.baseline }}" \
+              --iterations 5 \
+              --warmup 2 \
+              --output bench/BENCHMARK_RESULTS.md
+          else
+            python3 bench/compare_versions.py test_audio.wav \
+              --iterations 5 \
+              --warmup 2 \
+              --output bench/BENCHMARK_RESULTS.md
+          fi
 
       - name: Display benchmark summary
         if: always()
