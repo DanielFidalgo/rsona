@@ -318,8 +318,6 @@ print('✓ librosa.feature.rhythm.tempo API is available')
             echo "Full parity report available in artifacts"
           fi
 
-
-
       - name: Check for performance regressions
         run: |
           if [ -f "bench/BENCHMARK_RESULTS.md" ]; then

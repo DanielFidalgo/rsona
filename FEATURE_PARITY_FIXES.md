@@ -17,14 +17,21 @@ AttributeError: No librosa.feature attribute rhythm
 The librosa API changed between versions:
 - Old (< 0.10): `librosa.beat.tempo()`
 - New (>= 0.10): `librosa.feature.rhythm.tempo()`
-- librosa was showing deprecation warning for the old API
+- Different environments may have different versions installed
 
 **Fix Applied:**
 ```python
-# Updated to use newer API
-tempo = librosa.feature.rhythm.tempo(
-    onset_envelope=onset_env, sr=sr, hop_length=hop_length
-)[0]
+# Support both old and new librosa API versions
+try:
+    # New API (librosa >= 0.10.0)
+    tempo = librosa.feature.rhythm.tempo(
+        onset_envelope=onset_env, sr=sr, hop_length=hop_length
+    )[0]
+except AttributeError:
+    # Old API (librosa < 0.10.0)
+    tempo = librosa.beat.tempo(
+        onset_envelope=onset_env, sr=sr, hop_length=hop_length
+    )[0]
 ```
 
 **File:** `bench/feature_parity.py:148`
