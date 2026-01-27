@@ -57,6 +57,14 @@ struct Results {
     n_mfcc_coeffs: usize,
 }
 
+// Compatibility format for compare_bench.py
+#[derive(Serialize)]
+struct CompatResult {
+    time_sec: f64,
+    tempo_bpm: f32,
+    n_frames: usize,
+}
+
 #[derive(Serialize)]
 struct CorrectnessMetrics {
     tempo_within_tolerance: bool,
@@ -70,11 +78,12 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("Usage: {} <audio_file>", args[0]);
+        eprintln!("Usage: {} <audio_file> [--compat]", args[0]);
         std::process::exit(1);
     }
 
     let path = &args[1];
+    let compat_mode = args.iter().any(|arg| arg == "--compat");
 
     // Start total timing
     let t_total = Instant::now();
@@ -231,10 +240,24 @@ fn main() {
     };
 
     // Output JSON
-    let json = serde_json::to_string_pretty(&result).unwrap_or_else(|e| {
-        eprintln!("Error serializing result: {}", e);
-        std::process::exit(1);
-    });
-
-    println!("{}", json);
+    if compat_mode {
+        // Old format for compare_bench.py
+        let compat_result = CompatResult {
+            time_sec: total_time.as_secs_f64(),
+            tempo_bpm: tempo.bpm,
+            n_frames,
+        };
+        let json = serde_json::to_string(&compat_result).unwrap_or_else(|e| {
+            eprintln!("Error serializing result: {}", e);
+            std::process::exit(1);
+        });
+        println!("{}", json);
+    } else {
+        // New format with detailed metrics
+        let json = serde_json::to_string_pretty(&result).unwrap_or_else(|e| {
+            eprintln!("Error serializing result: {}", e);
+            std::process::exit(1);
+        });
+        println!("{}", json);
+    }
 }

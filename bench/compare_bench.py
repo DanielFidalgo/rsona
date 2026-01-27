@@ -52,7 +52,16 @@ def run_librosa_benchmark(audio_path: str) -> Dict[str, Any]:
 def run_rsona_benchmark(audio_path: str, bench_dir: Path) -> Dict[str, Any]:
     """Run rsona benchmark via cargo and return results."""
     result = subprocess.run(
-        ["cargo", "run", "--release", "--bin", "rsona_bench", "--", audio_path],
+        [
+            "cargo",
+            "run",
+            "--release",
+            "--bin",
+            "rsona_bench",
+            "--",
+            audio_path,
+            "--compat",
+        ],
         cwd=bench_dir.parent,
         capture_output=True,
         text=True,
