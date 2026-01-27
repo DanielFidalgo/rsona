@@ -145,9 +145,9 @@ def run_librosa_pipeline(audio_path: str) -> Dict[str, Any]:
     onset_env = librosa.onset.onset_strength(S=mel, sr=sr, hop_length=hop_length)
 
     # Tempo
-    tempo = librosa.feature.rhythm.tempo(
-        onset_envelope=onset_env, sr=sr, hop_length=hop_length
-    )[0]
+    tempo = librosa.beat.tempo(onset_envelope=onset_env, sr=sr, hop_length=hop_length)[
+        0
+    ]
 
     return {
         "sample_rate": sr,
