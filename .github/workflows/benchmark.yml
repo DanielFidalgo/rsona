@@ -144,6 +144,17 @@ jobs:
               --output bench/BENCHMARK_RESULTS.md
           fi
 
+      - name: Run librosa comparison
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "Running rsona vs librosa comparison..."
+          python3 bench/compare_bench.py test_audio.wav \
+            --iterations 5 \
+            --warmup 2 \
+            --output markdown \
+            --file bench/LIBROSA_COMPARISON.md || echo "Librosa comparison failed (librosa may not be installed)"
+
       - name: Display benchmark summary
         if: always()
         run: |
@@ -156,6 +167,16 @@ jobs:
             echo "Full report available in artifacts"
           fi
 
+          if [ -f "bench/LIBROSA_COMPARISON.md" ]; then
+            echo ""
+            echo "================================"
+            echo "LIBROSA COMPARISON SUMMARY"
+            echo "================================"
+            head -30 bench/LIBROSA_COMPARISON.md
+            echo ""
+            echo "Full comparison available in artifacts"
+          fi
+
       - name: Check for performance regressions
         run: |
           if [ -f "bench/BENCHMARK_RESULTS.md" ]; then
@@ -166,12 +187,14 @@ jobs:
             fi
           fi
 
-      - name: Upload benchmark report
+      - name: Upload benchmark reports
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: benchmark-report
-          path: bench/BENCHMARK_RESULTS.md
+          name: benchmark-reports
+          path: |
+            bench/BENCHMARK_RESULTS.md
+            bench/LIBROSA_COMPARISON.md
           retention-days: 90
 
       - name: Upload benchmark artifacts
@@ -226,8 +249,18 @@ jobs:
         run: |
           echo "## Benchmark Complete 🎉" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
           if [ -f "bench/BENCHMARK_RESULTS.md" ]; then
+            echo "### Version Comparison" >> $GITHUB_STEP_SUMMARY
             cat bench/BENCHMARK_RESULTS.md >> $GITHUB_STEP_SUMMARY
           else
-            echo "⚠️ Benchmark report not generated" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ Version comparison report not generated" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -f "bench/LIBROSA_COMPARISON.md" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Librosa Comparison" >> $GITHUB_STEP_SUMMARY
+            cat bench/LIBROSA_COMPARISON.md >> $GITHUB_STEP_SUMMARY
           fi
