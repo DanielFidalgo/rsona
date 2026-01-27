@@ -3,10 +3,10 @@ name: Benchmark Comparison
 on:
   pull_request:
     paths:
-      - 'src/**'
-      - 'bench/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
+      - "src/**"
+      - "bench/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
   push:
     branches: [main]
   workflow_dispatch:
@@ -190,19 +190,16 @@ jobs:
             const summaryMatch = report.match(/## Summary\n\n[\s\S]*?(?=\n## |$)/);
             const summary = summaryMatch ? summaryMatch[0] : report.substring(0, 1000);
 
-            const body = `## 📊 Benchmark Results
+            const repoUrl = 'https://github.com/' + context.repo.owner + '/' + context.repo.repo;
+            const runUrl = repoUrl + '/actions/runs/' + context.runId;
 
-${summary}
-
-<details>
-<summary>View Full Report</summary>
-
-${report}
-
-</details>
-
-📎 Full report available in [workflow artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-            `;
+            const body = '## 📊 Benchmark Results\n\n' +
+              summary + '\n\n' +
+              '<details>\n' +
+              '<summary>View Full Report</summary>\n\n' +
+              report + '\n\n' +
+              '</details>\n\n' +
+              '📎 Full report available in [workflow artifacts](' + runUrl + ')';
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
