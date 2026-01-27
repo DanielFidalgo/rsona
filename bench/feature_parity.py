@@ -20,6 +20,33 @@ import librosa
 import numpy as np
 from scipy.stats import pearsonr
 
+# Check librosa version
+try:
+    from packaging import version
+
+    librosa_version = version.parse(librosa.__version__)
+    required_version = version.parse("0.10.0")
+    if librosa_version < required_version:
+        print(
+            f"ERROR: librosa version {librosa.__version__} is too old.", file=sys.stderr
+        )
+        print(f"This script requires librosa >= 0.10.0", file=sys.stderr)
+        print(
+            f"\nUpgrade with: pip install --upgrade 'librosa>=0.10.0'", file=sys.stderr
+        )
+        sys.exit(1)
+except ImportError:
+    # If packaging is not available, try simple string comparison
+    if librosa.__version__.startswith("0.9") or librosa.__version__.startswith("0.8"):
+        print(
+            f"ERROR: librosa version {librosa.__version__} is too old.", file=sys.stderr
+        )
+        print(f"This script requires librosa >= 0.10.0", file=sys.stderr)
+        print(
+            f"\nUpgrade with: pip install --upgrade 'librosa>=0.10.0'", file=sys.stderr
+        )
+        sys.exit(1)
+
 
 class ParityValidator:
     """Validates feature parity between rsona and librosa."""
@@ -144,7 +171,7 @@ def run_librosa_pipeline(audio_path: str) -> Dict[str, Any]:
     # Onset Strength
     onset_env = librosa.onset.onset_strength(S=mel, sr=sr, hop_length=hop_length)
 
-    # Tempo
+    # Tempo (requires librosa >= 0.10.0)
     tempo = librosa.feature.rhythm.tempo(
         onset_envelope=onset_env, sr=sr, hop_length=hop_length
     )[0]
@@ -413,10 +440,13 @@ def main():
         print(f"\n❌ ERROR: librosa pipeline failed", file=sys.stderr)
         print(f"   {type(e).__name__}: {e}", file=sys.stderr)
         print(f"\nThis could be due to:", file=sys.stderr)
-        print(f"  - librosa not installed or wrong version", file=sys.stderr)
+        print(
+            f"  - librosa not installed or wrong version (requires >= 0.10.0)",
+            file=sys.stderr,
+        )
         print(f"  - Missing audio dependencies (soundfile, audioread)", file=sys.stderr)
         print(f"  - Corrupted or unsupported audio file", file=sys.stderr)
-        print(f"\nTry: pip install librosa soundfile", file=sys.stderr)
+        print(f"\nTry: pip install -r bench/requirements.txt", file=sys.stderr)
         sys.exit(1)
 
     try:

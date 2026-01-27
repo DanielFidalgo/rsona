@@ -100,6 +100,10 @@ Validates feature parity between rsona and librosa by comparing actual computed 
 python3 feature_parity.py [audio_file] --tolerance 0.01 --output FEATURE_PARITY.md
 ```
 
+**Requirements:**
+- librosa >= 0.10.0 (uses `librosa.feature.rhythm.tempo` API)
+- Install with: `pip install -r bench/requirements.txt`
+
 **Options:**
 - `-t, --tolerance TOLERANCE` - Relative error tolerance (default: 0.01 = 1%)
 - `-o, --output FILE` - Output markdown file (default: FEATURE_PARITY.md)
