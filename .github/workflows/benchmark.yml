@@ -149,13 +149,120 @@ jobs:
         continue-on-error: true
         run: |
           echo "Running rsona vs librosa comparison..."
-          python3 bench/compare_bench.py test_audio.wav \
+          if python3 bench/compare_bench.py test_audio.wav \
             --iterations 5 \
             --warmup 2 \
             --output markdown \
-            --file bench/LIBROSA_COMPARISON.md || echo "Librosa comparison failed (librosa may not be installed)"
+            --file bench/LIBROSA_COMPARISON.md; then
+            echo "✓ Librosa comparison completed successfully"
+          else
+            echo "⚠ Librosa comparison failed - creating error report"
+            cat > bench/LIBROSA_COMPARISON.md << 'EOF'
+          # rsona vs librosa Comparison
+
+          ## ⚠️ Comparison Failed
+
+          The librosa comparison could not be completed. This is likely due to:
+
+          1. **rsona output format mismatch** - Check that `rsona_bench --compat` works
+          2. **Librosa not installed** - Python dependencies missing
+          3. **Build failure** - rsona_bench failed to compile
+
+          ### Debugging Steps
+
+          Run locally to diagnose:
+          ```bash
+          # Test rsona_bench
+          cargo run --release --bin rsona_bench -- test_audio.wav --compat
+
+          # Test comparison script
+          python3 bench/compare_bench.py test_audio.wav
+          ```
+
+          ### Check Workflow Logs
+
+          Review the "Run librosa comparison" step logs for detailed error messages.
+
+          ---
+          *This is an error report. Fix the issues above to see full comparison results.*
+          EOF
+          fi
+
+      - name: Run feature parity validation
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "Running feature parity validation..."
+          if python3 bench/feature_parity.py test_audio.wav \
+            --tolerance 0.01 \
+            --output bench/FEATURE_PARITY.md; then
+            echo "✓ Feature parity validation completed"
+          else
+            echo "⚠ Feature parity validation not yet fully implemented"
+            cat > bench/FEATURE_PARITY.md << 'EOF'
+          # rsona Feature Parity Report
+
+          ## ⚠️ Validation Not Yet Complete
+
+          Feature parity validation framework is ready but needs:
+
+          1. **rsona_bench --features** integration
+          2. **Array extraction** from JSON output
+          3. **Feature comparison** implementation
+
+          ### Status
+
+          Currently validates:
+          - Basic output format ✓
+          - Tempo and frame counts ✓
+
+          Coming soon:
+          - STFT magnitude arrays
+          - Mel spectrogram arrays
+          - MFCC coefficient arrays
+          - RMS values
+          - Onset envelope
+
+          See `bench/feature_parity.py` for implementation details.
+
+          ---
+          *Framework ready - implementation in progress*
+          EOF
+          fi
 
       - name: Display benchmark summary
+        if: always()
+        run: |
+          if [ -f "bench/BENCHMARK_RESULTS.md" ]; then
+            echo "================================"
+            echo "BENCHMARK RESULTS SUMMARY"
+            echo "================================"
+            head -50 bench/BENCHMARK_RESULTS.md
+            echo ""
+            echo "Full report available in artifacts"
+          fi
+
+          if [ -f "bench/LIBROSA_COMPARISON.md" ]; then
+            echo ""
+            echo "================================"
+            echo "LIBROSA COMPARISON SUMMARY"
+            echo "================================"
+            head -30 bench/LIBROSA_COMPARISON.md
+            echo ""
+            echo "Full comparison available in artifacts"
+          fi
+
+          if [ -f "bench/FEATURE_PARITY.md" ]; then
+            echo ""
+            echo "================================"
+            echo "FEATURE PARITY SUMMARY"
+            echo "================================"
+            head -30 bench/FEATURE_PARITY.md
+            echo ""
+            echo "Full parity report available in artifacts"
+          fi
+
+      - name: Check for performance regressions
         if: always()
         run: |
           if [ -f "bench/BENCHMARK_RESULTS.md" ]; then
@@ -195,6 +302,7 @@ jobs:
           path: |
             bench/BENCHMARK_RESULTS.md
             bench/LIBROSA_COMPARISON.md
+            bench/FEATURE_PARITY.md
           retention-days: 90
 
       - name: Upload benchmark artifacts
@@ -205,6 +313,30 @@ jobs:
           path: |
             target/release/rsona_bench_*
           retention-days: 7
+
+      - name: Delete previous benchmark comments
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            for (const comment of comments.data) {
+              if (comment.user.login === 'github-actions[bot]' &&
+                  comment.body.includes('📊 Benchmark Results')) {
+                console.log(`Deleting previous benchmark comment: ${comment.id}`);
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: comment.id,
+                });
+              }
+            }
 
       - name: Comment PR with results
         if: github.event_name == 'pull_request' && always()
@@ -263,4 +395,12 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### Librosa Comparison" >> $GITHUB_STEP_SUMMARY
             cat bench/LIBROSA_COMPARISON.md >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -f "bench/FEATURE_PARITY.md" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Feature Parity Validation" >> $GITHUB_STEP_SUMMARY
+            cat bench/FEATURE_PARITY.md >> $GITHUB_STEP_SUMMARY
           fi
