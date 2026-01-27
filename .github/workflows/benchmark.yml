@@ -202,17 +202,12 @@ jobs:
           EOF
           fi
 
-      - name: Check rsona_bench binary for feature parity
+      - name: Rebuild rsona_bench for feature parity
         if: always()
         run: |
-          echo "Checking for rsona_bench binary..."
-          if [ -f "target/release/rsona_bench" ]; then
-            echo "✓ Binary exists: target/release/rsona_bench"
-            ls -lh target/release/rsona_bench
-          else
-            echo "⚠ Binary not found, building..."
-            cargo build --release --bin rsona_bench
-          fi
+          echo "Clean rebuild of rsona_bench (avoiding CPU-specific optimizations)..."
+          cargo clean -p rsona_bench
+          RUSTFLAGS="-C target-cpu=x86-64" cargo build --release --bin rsona_bench
 
           echo ""
           echo "Testing binary with --features flag..."
