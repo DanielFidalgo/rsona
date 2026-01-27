@@ -72,14 +72,7 @@ jobs:
           python3 -c "import librosa; print(f'librosa version: {librosa.__version__}')"
 
           echo "Testing librosa.feature.rhythm.tempo API..."
-          python3 -c "
-import librosa
-import numpy as np
-# Test that the new API exists
-assert hasattr(librosa.feature, 'rhythm'), 'librosa.feature.rhythm not found'
-assert hasattr(librosa.feature.rhythm, 'tempo'), 'librosa.feature.rhythm.tempo not found'
-print('✓ librosa.feature.rhythm.tempo API is available')
-"
+          python3 -c "import librosa; assert hasattr(librosa.feature, 'rhythm') and hasattr(librosa.feature.rhythm, 'tempo'); print('✓ librosa.feature.rhythm.tempo API is available')"
 
       - name: Cache test audio
         id: cache-audio
