@@ -73,8 +73,8 @@ jobs:
           echo "Verifying librosa installation..."
           python3 -c "import librosa; print(f'librosa version: {librosa.__version__}')"
 
-          echo "Testing librosa.feature.rhythm.tempo API..."
-          python3 -c "import librosa; assert hasattr(librosa.feature, 'rhythm') and hasattr(librosa.feature.rhythm, 'tempo'); print('✓ librosa.feature.rhythm.tempo API is available')"
+          echo "Testing librosa.feature.tempo API..."
+          python3 -c "import librosa; assert hasattr(librosa.feature, 'tempo'); print('✓ librosa.feature.tempo API is available')"
 
       - name: Cache test audio
         id: cache-audio
