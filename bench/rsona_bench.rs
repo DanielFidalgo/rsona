@@ -74,16 +74,34 @@ struct CorrectnessMetrics {
     validation_notes: Option<Vec<String>>,
 }
 
+// Features output format for parity validation
+#[derive(Serialize)]
+struct FeaturesOutput {
+    audio_info: AudioInfo,
+    features: Features,
+}
+
+#[derive(Serialize)]
+struct Features {
+    stft_magnitude: Vec<Vec<f32>>,
+    mel_spectrogram: Vec<Vec<f32>>,
+    mfcc: Vec<Vec<f32>>,
+    rms: Vec<f32>,
+    onset_envelope: Vec<f32>,
+    tempo_bpm: f32,
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("Usage: {} <audio_file> [--compat]", args[0]);
+        eprintln!("Usage: {} <audio_file> [--compat] [--features]", args[0]);
         std::process::exit(1);
     }
 
     let path = &args[1];
     let compat_mode = args.iter().any(|arg| arg == "--compat");
+    let features_mode = args.iter().any(|arg| arg == "--features");
 
     // Start total timing
     let t_total = Instant::now();
@@ -143,7 +161,7 @@ fn main() {
 
     // RMS
     let t5 = Instant::now();
-    let _rms_result = rms(&frames);
+    let rms_result = rms(&frames);
     let rms_time = t5.elapsed();
 
     // Onset strength
@@ -173,6 +191,21 @@ fn main() {
     if !tempo_valid {
         validation_notes.push(format!("Tempo {} BPM outside typical range", tempo.bpm));
         all_valid = false;
+    }
+
+    // Note: For generated test audio (2 Hz tremolo), expected tempo is ~120 BPM
+    // If using generated test audio, check accuracy against reference
+    if duration_seconds >= 14.0 && duration_seconds <= 16.0 {
+        // Likely generated test audio (15 seconds)
+        let expected_bpm = 120.0;
+        let tempo_diff_pct = ((tempo.bpm - expected_bpm).abs() / expected_bpm) * 100.0;
+        if tempo_diff_pct > 3.0 {
+            validation_notes.push(format!(
+                "Tempo {:.2} BPM differs from expected 120 BPM by {:.2}% (generated audio)",
+                tempo.bpm, tempo_diff_pct
+            ));
+            // Don't mark as invalid - just a note for investigation
+        }
     }
 
     // Check frame count matches expected
@@ -240,7 +273,66 @@ fn main() {
     };
 
     // Output JSON
-    if compat_mode {
+    if features_mode {
+        // Features format for parity validation
+        // Convert 2D arrays to Vec<Vec<f32>> for JSON serialization
+
+        // STFT magnitude (transposed to [frames, bins])
+        let stft_mag: Vec<Vec<f32>> = (0..n_frames)
+            .map(|frame_idx| {
+                (0..n_frequency_bins)
+                    .map(|bin_idx| spec.as_slice()[bin_idx * n_frames + frame_idx].norm())
+                    .collect()
+            })
+            .collect();
+
+        // Mel spectrogram (transposed to [frames, mels])
+        let mel_arr: Vec<Vec<f32>> = (0..n_frames)
+            .map(|frame_idx| {
+                (0..n_mels)
+                    .map(|mel_idx| mel.as_slice()[mel_idx * n_frames + frame_idx])
+                    .collect()
+            })
+            .collect();
+
+        // MFCC (transposed to [frames, coeffs])
+        let mfcc_arr: Vec<Vec<f32>> = (0..n_frames)
+            .map(|frame_idx| {
+                (0..n_mfcc)
+                    .map(|coeff_idx| mfcc_result.as_slice()[coeff_idx * n_frames + frame_idx])
+                    .collect()
+            })
+            .collect();
+
+        // RMS values
+        let rms_vec: Vec<f32> = rms_result.values().to_vec();
+
+        // Onset envelope
+        let onset_vec: Vec<f32> = onset.values().to_vec();
+
+        let features_output = FeaturesOutput {
+            audio_info: AudioInfo {
+                audio_file: path.clone(),
+                duration_seconds,
+                sample_rate,
+                n_samples,
+            },
+            features: Features {
+                stft_magnitude: stft_mag,
+                mel_spectrogram: mel_arr,
+                mfcc: mfcc_arr,
+                rms: rms_vec,
+                onset_envelope: onset_vec,
+                tempo_bpm: tempo.bpm,
+            },
+        };
+
+        let json = serde_json::to_string(&features_output).unwrap_or_else(|e| {
+            eprintln!("Error serializing features: {}", e);
+            std::process::exit(1);
+        });
+        println!("{}", json);
+    } else if compat_mode {
         // Old format for compare_bench.py
         let compat_result = CompatResult {
             time_sec: total_time.as_secs_f64(),
