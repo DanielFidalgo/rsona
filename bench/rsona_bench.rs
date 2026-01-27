@@ -114,8 +114,8 @@ fn main() {
     });
     let load_time = t0.elapsed();
 
-    let duration_seconds = buffer.samples.len() as f64 / buffer.sample_rate as f64;
-    let n_samples = buffer.samples.len();
+    let duration_seconds = buffer.frames() as f64 / buffer.sample_rate as f64;
+    let n_samples = buffer.frames();
     let sample_rate = buffer.sample_rate;
 
     // Frame audio
