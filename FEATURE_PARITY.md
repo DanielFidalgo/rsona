@@ -9,71 +9,71 @@
 
 | Feature | Status | Correlation | MAE | Relative Error |
 |---------|--------|-------------|-----|----------------|
-| stft_magnitude | ✅ | 0.9999 | 0.000000 | 0.00% |
-| mel_spectrogram | ✅ | 1.0000 | 0.000009 | 0.00% |
-| mfcc | ✅ | 1.0000 | 0.000035 | 0.00% |
+| stft_magnitude | ✅ | 0.9995 | 0.000000 | 0.00% |
+| mel_spectrogram | ✅ | 0.9999 | 0.000004 | 0.00% |
+| mfcc | ✅ | 1.0000 | 0.000010 | 0.00% |
 | rms | ✅ | 1.0000 | 0.000000 | 0.00% |
 | onset_envelope | ✅ | 1.0000 | 0.000001 | 0.00% |
-| tempo | ✅ | 1.0000 | 0.000000 | 0.00% |
+| tempo | ✅ | 1.0000 | 0.983254 | 1.37% |
 
 ## Detailed Metrics
 
 ### ✅ stft_magnitude
 *Short-Time Fourier Transform magnitude spectrum*
 
-- **Shape:** (1025, 1292)
-- **Correlation:** 0.999944
+- **Shape:** (1025, 10976)
+- **Correlation:** 0.999455
 - **MAE:** 0.000000
 - **MSE:** 0.000000
-- **Max Difference:** 0.000046
+- **Max Difference:** 0.000092
 - **Relative Error:** 0.00%
 
 ### ✅ mel_spectrogram
 *Mel-frequency spectrogram*
 
-- **Shape:** (128, 1292)
-- **Correlation:** 1.000000
-- **MAE:** 0.000009
+- **Shape:** (128, 10976)
+- **Correlation:** 0.999946
+- **MAE:** 0.000004
 - **MSE:** 0.000000
-- **Max Difference:** 0.000671
+- **Max Difference:** 0.002075
 - **Relative Error:** 0.00%
 
 ### ✅ mfcc
 *Mel-Frequency Cepstral Coefficients*
 
-- **Shape:** (20, 1292)
+- **Shape:** (20, 10976)
 - **Correlation:** 1.000000
-- **MAE:** 0.000035
+- **MAE:** 0.000010
 - **MSE:** 0.000000
-- **Max Difference:** 0.000313
+- **Max Difference:** 0.000114
 - **Relative Error:** 0.00%
 
 ### ✅ rms
 *Root Mean Square energy*
 
-- **Shape:** (1292,)
+- **Shape:** (10976,)
 - **Correlation:** 1.000000
 - **MAE:** 0.000000
 - **MSE:** 0.000000
-- **Max Difference:** 0.000000
+- **Max Difference:** 0.000001
 - **Relative Error:** 0.00%
 
 ### ✅ onset_envelope
 *Onset strength envelope*
 
-- **Shape:** (1292,)
+- **Shape:** (10976,)
 - **Correlation:** 1.000000
 - **MAE:** 0.000001
 - **MSE:** 0.000000
-- **Max Difference:** 0.000006
+- **Max Difference:** 0.000017
 - **Relative Error:** 0.00%
 
 ### ✅ tempo
 *Tempo estimation (BPM)*
 
-- **rsona:** 120.19 BPM
-- **librosa:** 120.19 BPM
-- **Difference:** 0.00%
+- **rsona:** 70.79 BPM
+- **librosa:** 71.78 BPM
+- **Difference:** 1.37%
 - **Tolerance:** 5.0% (relaxed for tempo)
 
 ## Recommendations
