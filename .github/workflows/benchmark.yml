@@ -58,7 +58,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install numpy librosa
+          pip install numpy librosa soundfile
 
       - name: Cache test audio
         id: cache-audio
@@ -188,16 +188,50 @@ jobs:
           EOF
           fi
 
+      - name: Check rsona_bench binary for feature parity
+        if: always()
+        run: |
+          echo "Checking for rsona_bench binary..."
+          if [ -f "target/release/rsona_bench" ]; then
+            echo "✓ Binary exists: target/release/rsona_bench"
+            ls -lh target/release/rsona_bench
+          else
+            echo "⚠ Binary not found, building..."
+            cargo build --release --bin rsona_bench
+          fi
+
+          echo ""
+          echo "Testing binary with --features flag..."
+          if target/release/rsona_bench test_audio.wav --features > /tmp/features_test.json 2>&1; then
+            echo "✓ Binary works with --features flag"
+            echo "Output size: $(wc -c < /tmp/features_test.json) bytes"
+          else
+            echo "❌ Binary failed with --features flag"
+            echo "Error output:"
+            cat /tmp/features_test.json
+            exit 1
+          fi
+
       - name: Run feature parity validation
         if: always()
         continue-on-error: true
         run: |
           echo "Running feature parity validation..."
+          echo "Audio file: $(ls -lh test_audio.wav)"
+          echo "Binary: $(ls -lh target/release/rsona_bench)"
+          echo ""
+
           if python3 bench/feature_parity.py test_audio.wav \
             --tolerance 0.01 \
-            --output bench/FEATURE_PARITY.md; then
+            --output bench/FEATURE_PARITY.md 2>&1 | tee feature_parity.log; then
             echo "✓ Feature parity validation completed"
           else
+            echo "⚠ Feature parity validation failed"
+            echo ""
+            echo "=== Error Log ==="
+            cat feature_parity.log
+            echo "=== End Error Log ==="
+            echo ""
             echo "⚠ Feature parity validation failed - creating error report"
             cat > bench/FEATURE_PARITY.md << 'EOF'
           # rsona Feature Parity Report

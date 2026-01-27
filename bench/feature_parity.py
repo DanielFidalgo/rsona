@@ -171,28 +171,51 @@ def run_rsona_pipeline(audio_path: str) -> Dict[str, Any]:
     bench_dir = Path(__file__).parent
     project_root = bench_dir.parent
 
-    # Use rsona_bench with --features flag to get full feature arrays
-    result = subprocess.run(
-        [
-            "cargo",
-            "run",
-            "--release",
-            "--bin",
-            "rsona_bench",
-            "--",
-            audio_path,
-            "--features",
-        ],
-        cwd=project_root,
-        capture_output=True,
-        text=True,
-    )
+    # Try pre-built binary first (for CI), then fall back to cargo run
+    binary_path = project_root / "target" / "release" / "rsona_bench"
+
+    result = None
+    if binary_path.exists():
+        print(f"Using pre-built binary: {binary_path}")
+        result = subprocess.run(
+            [str(binary_path), audio_path, "--features"],
+            capture_output=True,
+            text=True,
+        )
+
+    if result is None or result.returncode != 0:
+        print("Pre-built binary not found or failed, using cargo run...")
+        result = subprocess.run(
+            [
+                "cargo",
+                "run",
+                "--release",
+                "--bin",
+                "rsona_bench",
+                "--",
+                audio_path,
+                "--features",
+            ],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+        )
 
     if result.returncode != 0:
-        raise RuntimeError(f"rsona_bench failed: {result.stderr}")
+        print(f"rsona_bench stderr: {result.stderr}", file=sys.stderr)
+        print(f"rsona_bench stdout: {result.stdout}", file=sys.stderr)
+        raise RuntimeError(
+            f"rsona_bench failed with exit code {result.returncode}: {result.stderr}"
+        )
 
     # Parse JSON from output
-    data = json.loads(result.stdout)
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError as e:
+        print(f"Failed to parse JSON from rsona_bench output", file=sys.stderr)
+        print(f"stdout: {result.stdout}", file=sys.stderr)
+        print(f"stderr: {result.stderr}", file=sys.stderr)
+        raise RuntimeError(f"Invalid JSON from rsona_bench: {e}")
 
     # Extract features and convert to numpy arrays
     features = data["features"]
@@ -371,12 +394,37 @@ def main():
 
     validator = ParityValidator(tolerance=args.tolerance)
 
-    # Run both pipelines
-    librosa_data = run_librosa_pipeline(args.audio_file)
-    print()
+    # Run both pipelines with error handling
+    try:
+        librosa_data = run_librosa_pipeline(args.audio_file)
+        print()
+    except Exception as e:
+        print(f"\n❌ ERROR: librosa pipeline failed", file=sys.stderr)
+        print(f"   {type(e).__name__}: {e}", file=sys.stderr)
+        print(f"\nThis could be due to:", file=sys.stderr)
+        print(f"  - librosa not installed or wrong version", file=sys.stderr)
+        print(f"  - Missing audio dependencies (soundfile, audioread)", file=sys.stderr)
+        print(f"  - Corrupted or unsupported audio file", file=sys.stderr)
+        print(f"\nTry: pip install librosa soundfile", file=sys.stderr)
+        sys.exit(1)
 
-    rsona_data = run_rsona_pipeline(args.audio_file)
-    print()
+    try:
+        rsona_data = run_rsona_pipeline(args.audio_file)
+        print()
+    except Exception as e:
+        print(f"\n❌ ERROR: rsona pipeline failed", file=sys.stderr)
+        print(f"   {type(e).__name__}: {e}", file=sys.stderr)
+        print(f"\nThis could be due to:", file=sys.stderr)
+        print(
+            f"  - rsona_bench not built (run: cargo build --release)", file=sys.stderr
+        )
+        print(f"  - rsona_bench --features flag not supported", file=sys.stderr)
+        print(f"  - JSON output format mismatch", file=sys.stderr)
+        print(
+            f"\nTry: cargo run --release --bin rsona_bench -- {args.audio_file} --features",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Show what was extracted
     print("Librosa extracted:")
@@ -462,14 +510,19 @@ def main():
     print()
 
     # Generate report
-    report = generate_report(validator, args.audio_file, args.output)
-    print(report)
+    try:
+        report = generate_report(validator, args.audio_file, args.output)
+        print(report)
 
-    # Save to file if specified
-    if args.output:
-        with open(args.output, "w") as f:
-            f.write(report)
-        print(f"Report saved to: {args.output}")
+        # Save to file if specified
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(report)
+            print(f"\n✓ Report saved to: {args.output}")
+    except Exception as e:
+        print(f"\n❌ ERROR: Failed to generate report", file=sys.stderr)
+        print(f"   {type(e).__name__}: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -92,6 +92,46 @@ Convenience script that checks dependencies, builds rsona, and runs comparisons.
 ./run_benchmark.sh --skip-build
 ```
 
+### 4. `feature_parity.py` - Numerical Accuracy Validation
+
+Validates feature parity between rsona and librosa by comparing actual computed values (not just timing).
+
+```bash
+python3 feature_parity.py [audio_file] --tolerance 0.01 --output FEATURE_PARITY.md
+```
+
+**Options:**
+- `-t, --tolerance TOLERANCE` - Relative error tolerance (default: 0.01 = 1%)
+- `-o, --output FILE` - Output markdown file (default: FEATURE_PARITY.md)
+
+**Features Validated:**
+- STFT magnitude spectra (element-wise comparison)
+- Mel spectrograms (frequency bin accuracy)
+- MFCC coefficients (cepstral accuracy)
+- RMS energy values
+- Onset strength envelopes
+- Tempo estimation (BPM accuracy)
+
+**What It Does:**
+1. Runs both rsona and librosa on the same audio
+2. Extracts full feature arrays using `rsona_bench --features`
+3. Compares arrays element-by-element with statistical analysis
+4. Reports mean/max errors, correlation, and pass/fail status
+5. Generates detailed markdown report with visualizations
+
+**Output Example:**
+```
+Feature: STFT Magnitude
+  ✓ PASS (mean error: 0.23%, max error: 1.45%)
+  - Correlation: 0.9998
+  - Shape match: (1025, 1292)
+  
+Feature: Tempo
+  ✓ PASS (difference: 4.44%, 120.0 vs 114.8 BPM)
+```
+
+This tool is critical for ensuring rsona produces **bit-accurate results**, not just fast results.
+
 ## Performance Results
 
 ### Feature-by-Feature Performance
@@ -245,8 +285,10 @@ bench/
 ├── RESULTS_SUMMARY.md       # Latest benchmark results
 ├── .gitignore               # Ignore generated reports
 │
-├── compare_bench.py         # Full pipeline comparison
+├── compare_bench.py         # rsona vs librosa comparison
+├── compare_versions.py      # rsona version comparison (CI)
 ├── feature_benchmark.py     # Feature-by-feature analysis
+├── feature_parity.py        # Numerical accuracy validation
 ├── rsona_bench.rs           # Rust benchmark binary
 ├── run_benchmark.sh         # Automated runner script
 ├── requirements.txt         # Python dependencies
