@@ -74,7 +74,8 @@ jobs:
         run: |
           echo "Verifying librosa installation..."
           python3 -c "import librosa; print(f'librosa version: {librosa.__version__}')"
-Cache test audio
+
+      - name: Cache test audio
         id: cache-audio
         uses: actions/cache@v4
         with:
