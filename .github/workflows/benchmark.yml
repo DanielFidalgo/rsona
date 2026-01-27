@@ -51,16 +51,30 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-benchmark
+          key: ${{ runner.os }}-pip-benchmark-v2
           restore-keys: |
-            ${{ runner.os }}-pip-
+            ${{ runner.os }}-pip-benchmark-v2
 
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
+
+          # Check if librosa >= 0.10.0 is already installed
+          if python3 -c "import librosa; from packaging import version; assert version.parse(librosa.__version__) >= version.parse('0.10.0')" 2>/dev/null; then
+            echo "✓ librosa >= 0.10.0 already installed ($(python3 -c 'import librosa; print(librosa.__version__)'))"
+          else
+            echo "Upgrading librosa to >= 0.10.0..."
+            pip install --upgrade 'librosa>=0.10.0'
+          fi
+
+          # Install remaining requirements
           pip install -r bench/requirements.txt
 
-      - name: Cache test audio
+      - name: Verify librosa version
+        run: |
+          echo "Verifying librosa installation..."
+          python3 -c "import librosa; print(f'librosa version: {librosa.__version__}')"
+Cache test audio
         id: cache-audio
         uses: actions/cache@v4
         with:
