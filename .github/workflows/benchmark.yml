@@ -19,6 +19,8 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
+    env:
+      RUSTFLAGS: "-C target-cpu=x86-64"
 
     steps:
       - name: Checkout code
@@ -205,9 +207,8 @@ jobs:
       - name: Rebuild rsona_bench for feature parity
         if: always()
         run: |
-          echo "Clean rebuild of rsona_bench (avoiding CPU-specific optimizations)..."
-          cargo clean -p rsona_bench
-          RUSTFLAGS="-C target-cpu=x86-64" cargo build --release --bin rsona_bench
+          echo "Rebuilding rsona_bench with baseline CPU instructions..."
+          cargo build --release --bin rsona_bench
 
           echo ""
           echo "Testing binary with --features flag..."
