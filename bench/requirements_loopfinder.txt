@@ -1,0 +1,16 @@
+# Requirements for loop finder benchmarks
+# Install with: pip install -r requirements_loopfinder.txt
+
+# Core audio processing
+librosa>=0.10.0
+numpy>=1.20.0
+soundfile>=0.12.0
+
+# Machine learning (required by librosa_loopfinder)
+scikit-learn>=1.0.0
+
+# librosa_loopfinder from GitHub
+git+https://github.com/Kexanone/librosa_loopfinder.git
+
+# Optional but recommended for better audio loading
+audioread>=3.0.0
