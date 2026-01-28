@@ -81,7 +81,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: test_audio.wav
-          key: test-audio-freesound-v1
+          key: test-audio-freesound-v2
 
       - name: Download test audio
         if: steps.cache-audio.outputs.cache-hit != 'true'
