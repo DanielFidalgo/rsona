@@ -82,21 +82,32 @@ jobs:
         uses: actions/cache@v4
         with:
           path: test_audio.wav
-          key: test-audio-freesound-v4
+          key: test-audio-freesound-v5
 
       - name: Download test audio
         if: steps.cache-audio.outputs.cache-hit != 'true'
         env:
           FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
+          FREESOUND_CLIENT_ID: ${{ secrets.FREESOUND_CLIENT_ID }}
         run: |
           echo "Downloading test audio for benchmarking..."
 
-          # Debug: Check if FREESOUND_API_KEY is set
+          # Debug: Check if FREESOUND credentials are set
           if [ -n "${FREESOUND_API_KEY:-}" ]; then
             echo "✓ FREESOUND_API_KEY is set (length: ${#FREESOUND_API_KEY})"
           else
             echo "⚠️  FREESOUND_API_KEY is not set"
-            echo "This will fall back to synthetic audio generation"
+          fi
+
+          if [ -n "${FREESOUND_CLIENT_ID:-}" ]; then
+            echo "✓ FREESOUND_CLIENT_ID is set (length: ${#FREESOUND_CLIENT_ID})"
+          else
+            echo "⚠️  FREESOUND_CLIENT_ID is not set"
+          fi
+
+          if [ -z "${FREESOUND_API_KEY:-}" ] || [ -z "${FREESOUND_CLIENT_ID:-}" ]; then
+            echo ""
+            echo "⚠️  Missing Freesound credentials - will fall back to synthetic audio generation"
           fi
           echo ""
 

@@ -27,15 +27,28 @@ echo "rsona Test Audio Download"
 echo "============================================"
 echo ""
 
-# Function to download from Freesound
+# Function to download from Freesound using OAuth 2.0 client credentials flow
 download_from_freesound() {
     if [ -z "${FREESOUND_API_KEY:-}" ]; then
         echo "⚠️  No Freesound API key found"
         echo ""
         echo "To download from Freesound:"
         echo "  1. Get free API key: https://freesound.org/apiv2/apply"
-        echo "  2. Set environment variable:"
-        echo "     export FREESOUND_API_KEY='your-key-here'"
+        echo "  2. Set environment variables:"
+        echo "     export FREESOUND_API_KEY='your-api-key'"
+        echo "     export FREESOUND_CLIENT_ID='your-client-id'"
+        echo ""
+        return 1
+    fi
+
+    if [ -z "${FREESOUND_CLIENT_ID:-}" ]; then
+        echo "⚠️  No Freesound client ID found"
+        echo ""
+        echo "To download from Freesound:"
+        echo "  1. Get free API key and client ID: https://freesound.org/apiv2/apply"
+        echo "  2. Set environment variables:"
+        echo "     export FREESOUND_API_KEY='your-api-key'"
+        echo "     export FREESOUND_CLIENT_ID='your-client-id'"
         echo ""
         return 1
     fi
@@ -46,17 +59,72 @@ download_from_freesound() {
     echo "License: ${TRACK_LICENSE}"
     echo ""
 
-    # Freesound download endpoint requires authentication
-    # Note: This downloads the original uploaded file (usually WAV format)
-    local download_url="https://freesound.org/apiv2/sounds/${FREESOUND_ID}/download/?token=${FREESOUND_API_KEY}"
+    # OAuth 2.0 Client Credentials Flow
+    # Step 1: Obtain access token
+    echo "Step 1: Obtaining OAuth 2.0 access token..."
+    echo "Client ID: ${FREESOUND_CLIENT_ID:0:8}... (truncated)"
 
-    # Download the audio file with authentication
-    if curl -L -f -o "${OUTPUT}" "${download_url}"; then
+    local token_url="https://freesound.org/apiv2/oauth2/access_token/"
+    local token_response
+    local access_token
+
+    # Request access token using client credentials grant
+    token_response=$(curl -s -f -X POST "${token_url}" \
+        -d "grant_type=client_credentials" \
+        -d "client_id=${FREESOUND_CLIENT_ID}" \
+        -d "client_secret=${FREESOUND_API_KEY}" 2>&1)
+
+    if [ $? -ne 0 ]; then
+        echo "❌ Failed to obtain access token from Freesound OAuth endpoint"
+        echo "Response: ${token_response}"
+        return 1
+    fi
+
+    # Parse access token from JSON response
+    if command -v jq &> /dev/null; then
+        access_token=$(echo "${token_response}" | jq -r '.access_token')
+    elif command -v python3 &> /dev/null; then
+        access_token=$(echo "${token_response}" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('access_token', ''))" 2>/dev/null)
+    else
+        # Fallback: simple grep and cut (less reliable)
+        access_token=$(echo "${token_response}" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+    fi
+
+    if [ -z "${access_token}" ] || [ "${access_token}" = "null" ] || [ "${access_token}" = "None" ]; then
+        echo "❌ Failed to extract access token from response"
+        echo "Response: ${token_response}"
+        return 1
+    fi
+
+    echo "✓ Access token obtained"
+    echo ""
+
+    # Step 2: Download audio file using access token
+    echo "Step 2: Downloading audio file..."
+    local download_url="https://freesound.org/apiv2/sounds/${FREESOUND_ID}/download/"
+
+    # Use Bearer token authentication (OAuth 2.0 standard)
+    if curl -L -f -o "${OUTPUT}" \
+        -H "Authorization: Bearer ${access_token}" \
+        "${download_url}"; then
         echo ""
         echo "✓ Downloaded from Freesound successfully!"
+
+        # Verify it's an audio file
+        if command -v file &> /dev/null; then
+            local file_type=$(file -b "${OUTPUT}")
+            echo "File type: ${file_type}"
+        fi
+
         return 0
     else
         echo "❌ Failed to download from Freesound"
+        echo ""
+        echo "Possible issues:"
+        echo "  - Invalid access token"
+        echo "  - Sound not available for download"
+        echo "  - Network connectivity issues"
+        echo ""
         return 1
     fi
 }
