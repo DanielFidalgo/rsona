@@ -81,24 +81,22 @@ jobs:
         uses: actions/cache@v4
         with:
           path: test_audio.wav
-          key: test-audio-generated-v1
+          key: test-audio-freesound-v1
 
-      - name: Generate test audio
+      - name: Download test audio
         if: steps.cache-audio.outputs.cache-hit != 'true'
+        env:
+          FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
         run: |
-          echo "Generating test audio for benchmarking..."
+          echo "Downloading test audio for benchmarking..."
 
-          # Install sox
+          # Install dependencies (sox for fallback generation)
           sudo apt-get update -qq
-          sudo apt-get install -y -qq sox libsox-fmt-all
+          sudo apt-get install -y -qq sox libsox-fmt-all curl
 
-          # Generate 15-second test audio with simulated beats (~120 BPM)
-          # Two-tone harmony with tremolo creates realistic musical patterns
-          sox -n -r 44100 -c 2 test_audio.wav \
-            synth 15 sine 220 sine 330 \
-            fade 0.1 15 0.1 tremolo 2 50 gain -3
-
-          echo "✓ Generated test audio (15s, 44.1kHz, Stereo)"
+          # Run the download script (will try Freesound, then fallback to generation)
+          chmod +x scripts/download_test_audio.sh
+          ./scripts/download_test_audio.sh test_audio.wav
 
           # Verify final file is valid
           if [ ! -f "test_audio.wav" ]; then
