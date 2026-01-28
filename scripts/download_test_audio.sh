@@ -46,17 +46,12 @@ download_from_freesound() {
     echo "License: ${TRACK_LICENSE}"
     echo ""
 
-    # Get sound info to find download URL
-    local info_url="https://freesound.org/apiv2/sounds/${FREESOUND_ID}/?token=${FREESOUND_API_KEY}"
-    local download_url
+    # Freesound download endpoint requires authentication
+    # Note: This downloads the original uploaded file (usually WAV format)
+    local download_url="https://freesound.org/apiv2/sounds/${FREESOUND_ID}/download/?token=${FREESOUND_API_KEY}"
 
-    if ! download_url=$(curl -s "${info_url}" | grep -o '"download":"[^"]*"' | cut -d'"' -f4); then
-        echo "❌ Failed to get download URL from Freesound API"
-        return 1
-    fi
-
-    # Download the audio file
-    if curl -L -f -o "${OUTPUT}" "${download_url}?token=${FREESOUND_API_KEY}"; then
+    # Download the audio file with authentication
+    if curl -L -f -o "${OUTPUT}" "${download_url}"; then
         echo ""
         echo "✓ Downloaded from Freesound successfully!"
         return 0
