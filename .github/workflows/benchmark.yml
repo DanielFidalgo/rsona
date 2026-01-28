@@ -90,6 +90,15 @@ jobs:
         run: |
           echo "Downloading test audio for benchmarking..."
 
+          # Debug: Check if FREESOUND_API_KEY is set
+          if [ -n "${FREESOUND_API_KEY:-}" ]; then
+            echo "✓ FREESOUND_API_KEY is set (length: ${#FREESOUND_API_KEY})"
+          else
+            echo "⚠️  FREESOUND_API_KEY is not set"
+            echo "This will fall back to synthetic audio generation"
+          fi
+          echo ""
+
           # Install dependencies (sox for fallback generation)
           sudo apt-get update -qq
           sudo apt-get install -y -qq sox libsox-fmt-all curl
